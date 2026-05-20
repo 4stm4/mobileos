@@ -5,10 +5,12 @@ set(CMAKE_C_STANDARD 11)
 
 # --- Dependencies ---
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(DRM    REQUIRED libdrm)
-pkg_check_modules(INPUT  REQUIRED libinput)
-pkg_check_modules(UDEV   REQUIRED libudev)
-pkg_check_modules(LVGL   REQUIRED lvgl)
+pkg_check_modules(DRM   REQUIRED libdrm)
+pkg_check_modules(INPUT REQUIRED libinput)
+pkg_check_modules(UDEV  REQUIRED libudev)
+
+# LVGL installs LVGLConfig.cmake — use find_package, not pkg-config
+find_package(LVGL REQUIRED)
 
 # --- Sources ---
 set(SOURCES
@@ -33,14 +35,13 @@ target_include_directories(mobile-shell PRIVATE
     ${DRM_INCLUDE_DIRS}
     ${INPUT_INCLUDE_DIRS}
     ${UDEV_INCLUDE_DIRS}
-    ${LVGL_INCLUDE_DIRS}
 )
 
 target_link_libraries(mobile-shell PRIVATE
     ${DRM_LIBRARIES}
     ${INPUT_LIBRARIES}
     ${UDEV_LIBRARIES}
-    ${LVGL_LIBRARIES}
+    lvgl::lvgl
     m pthread
 )
 
@@ -51,5 +52,3 @@ target_compile_options(mobile-shell PRIVATE
 )
 
 install(TARGETS mobile-shell DESTINATION bin)
-
-# Systemd/sysvinit service install handled by package .mk overlay
