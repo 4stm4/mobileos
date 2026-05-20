@@ -1,0 +1,24 @@
+#!/bin/sh
+# Syslog to /var/log/messages (tmpfs — lost on reboot, persisted by future logd)
+
+case "$1" in
+    start)
+        echo -n "Starting syslog: "
+        syslogd -n -O /var/log/messages -s 512 -b 2 &
+        klogd -n &
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping syslog: "
+        killall syslogd klogd 2>/dev/null
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

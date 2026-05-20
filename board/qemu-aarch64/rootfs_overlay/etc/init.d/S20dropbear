@@ -1,0 +1,24 @@
+#!/bin/sh
+# Dropbear SSH (development access; disabled in production via defconfig)
+
+DROPBEAR_OPTS="-R -B"   # -R: create host keys if missing, -B: allow blank passwords (dev only)
+
+case "$1" in
+    start)
+        echo -n "Starting dropbear: "
+        install -d /etc/dropbear
+        dropbear $DROPBEAR_OPTS && echo "OK" || echo "FAIL"
+        ;;
+    stop)
+        echo -n "Stopping dropbear: "
+        killall dropbear 2>/dev/null && echo "OK" || echo "not running"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

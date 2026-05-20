@@ -1,0 +1,3 @@
+#!/bin/sh
+# Print product banner on boot console
+printf "\n4STM4 Mobile OS — QEMU aarch64 virt\n\n"

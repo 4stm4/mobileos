@@ -1,0 +1,40 @@
+#!/bin/sh
+# commd — communication daemon
+
+DAEMON=/usr/bin/commd
+PIDFILE=/var/run/commd.pid
+LOGFILE=/var/log/commd.log
+
+case "$1" in
+    start)
+        echo -n "Starting commd: "
+        if [ ! -x "$DAEMON" ]; then
+            echo "not installed"
+            exit 0
+        fi
+        install -d /run/commd
+        install -d /data/commd
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping commd: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        rm -f "$PIDFILE" /run/commd/ui.sock /run/commd/backend.sock /run/commd/admin.sock
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

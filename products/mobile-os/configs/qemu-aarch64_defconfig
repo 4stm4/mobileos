@@ -55,4 +55,5 @@ BR2_PACKAGE_HARDWARED=y
 # BR2_PACKAGE_RPI_FIRMWARE is not set
 
 # Filesystem scripts
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_MOBILEOS_PATH)/board/qemu-aarch64/rootfs_overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_MOBILEOS_PATH)/board/qemu-aarch64/post-build.sh"
