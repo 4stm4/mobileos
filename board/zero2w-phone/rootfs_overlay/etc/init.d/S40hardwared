@@ -1,0 +1,29 @@
+#!/bin/sh
+# hardwared — HAT/hardware detection daemon (early, before networking)
+
+DAEMON=/usr/bin/hardwared
+PIDFILE=/var/run/hardwared.pid
+LOGFILE=/var/log/hardwared.log
+
+case "$1" in
+    start)
+        echo -n "Starting hardwared: "
+        if [ ! -x "$DAEMON" ]; then echo "not installed"; exit 0; fi
+        install -d /data/hardwared
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping hardwared: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        rm -f "$PIDFILE" /run/hardwared.sock
+        echo "OK"
+        ;;
+    restart|reload) "$0" stop; "$0" start ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped" ;;
+    *) echo "Usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac

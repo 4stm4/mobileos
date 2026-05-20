@@ -1,0 +1,11 @@
+[package]
+name = "powerd"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "powerd"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

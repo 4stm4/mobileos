@@ -1,0 +1,33 @@
+#!/bin/sh
+# powerd — power management daemon
+
+DAEMON=/usr/bin/powerd
+PIDFILE=/var/run/powerd.pid
+LOGFILE=/var/log/powerd.log
+
+case "$1" in
+    start)
+        echo -n "Starting powerd: "
+        if [ ! -x "$DAEMON" ]; then echo "not installed"; exit 0; fi
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping powerd: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        rm -f "$PIDFILE" /run/powerd.sock
+        # Restore full brightness so console is visible after shell exit
+        for bl in /sys/class/backlight/*/brightness; do
+            max=$(cat "$(dirname "$bl")/max_brightness" 2>/dev/null || echo 255)
+            echo "$max" > "$bl" 2>/dev/null || true
+        done
+        echo "OK"
+        ;;
+    restart|reload) "$0" stop; "$0" start ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped" ;;
+    *) echo "Usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
