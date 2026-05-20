@@ -1,0 +1,66 @@
+categories:
+  - id: core
+    name: Core Daemons
+    packages:
+      - key: BR2_PACKAGE_COMMD
+        name: commd
+        description: "IPC-хаб (3 сокета: ui/backend/admin), SQLite WAL, SUBSCRIBE push"
+        size_kb: 800
+        required: true
+      - key: BR2_PACKAGE_NETD
+        name: netd
+        description: "Сетевой демон: Wi-Fi (wpa_supplicant), WireGuard, DNS"
+        size_kb: 600
+        required: true
+      - key: BR2_PACKAGE_POWERD
+        name: powerd
+        description: "Управление питанием: подсветка, dim/sleep, батарея"
+        size_kb: 400
+        required: true
+      - key: BR2_PACKAGE_LOCALBE
+        name: localbe
+        description: "Локальный бэкенд мессенджера (SQLite spool, black hole)"
+        size_kb: 400
+        required: true
+      - key: BR2_PACKAGE_HARDWARED
+        name: hardwared
+        description: "Определение HAT-платы по EEPROM (magic 0x52 0x2D 0x50 0x69)"
+        size_kb: 300
+        required: false
+
+  - id: telephony
+    name: Telephony
+    packages:
+      - key: BR2_PACKAGE_SIMD
+        name: simd
+        description: "Демон SIM800L: AT-команды, звонки (DIAL/HANGUP), SMS"
+        size_kb: 400
+        required: false
+
+  - id: messaging
+    name: Messaging
+    packages:
+      - key: BR2_PACKAGE_TDJSON
+        name: tdjson
+        description: "TDLib — Telegram Database Library, prebuilt aarch64"
+        size_kb: 45000
+        required: false
+      - key: BR2_PACKAGE_TELEGRAMD
+        name: telegramd
+        description: "Telegram демон: TDLib FFI, авторизация, события → commd"
+        size_kb: 1200
+        required: false
+
+  - id: display
+    name: Display & UI
+    packages:
+      - key: BR2_PACKAGE_LVGL
+        name: lvgl
+        description: "LVGL 9.2 — embedded graphics library (320×480, RGB565)"
+        size_kb: 2000
+        required: false
+      - key: BR2_PACKAGE_MOBILE_SHELL
+        name: mobile-shell
+        description: "Оболочка LVGL+DRM: home, dialer, messages, settings"
+        size_kb: 1500
+        required: false

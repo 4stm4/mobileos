@@ -1,0 +1,29 @@
+qemu-aarch64:
+  description: "QEMU virt, Cortex-A53, для разработки"
+  status: verified
+  arch: aarch64
+  kernel_defconfig: defconfig (virt)
+  image_name: rootfs.ext4 + Image
+  qemu_supported: true
+  wifi_capable: false
+  build_kernel_modules: false
+  install_boot_files: false
+  boot_cmdline: "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rw rootwait"
+  ssh_port: 19090
+  defconfig: qemu-aarch64_defconfig
+  output_dir: output-qemu
+
+zero2w-phone:
+  description: "RPi Zero 2 W, 320×480, SIM800L"
+  status: wip
+  arch: aarch64
+  kernel_defconfig: bcm2711 + rpi-6.6.y
+  image_name: sdcard.img
+  qemu_supported: false
+  wifi_capable: true
+  build_kernel_modules: true
+  install_boot_files: true
+  boot_cmdline: "console=serial0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rw rootwait quiet"
+  ssh_port: 22
+  defconfig: zero2w-phone_defconfig
+  output_dir: output-zero2w

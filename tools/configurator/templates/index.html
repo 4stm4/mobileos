@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mobileos Configurator</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</head>
+<body>
+
+<div x-data="app()" x-init="init()" x-cloak class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">mobileos</div>
+
+    <nav class="steps-nav">
+      <template x-for="(label, i) in ['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build']" :key="i">
+        <button class="step-btn"
+          :class="{ active: step === i+1, done: step > i+1 }"
+          @click="step = i+1">
+          <span class="step-num" x-text="i+1"></span>
+          <span x-text="label"></span>
+        </button>
+      </template>
+    </nav>
+
+    <div class="profile-section">
+      <div class="section-label">Профиль</div>
+      <select x-model="profileName" @change="loadProfile(profileName)" class="full-width">
+        <option value="">— новый —</option>
+        <template x-for="p in profiles" :key="p.name">
+          <option :value="p.name" x-text="p.name"></option>
+        </template>
+      </select>
+      <div class="btn-row" style="margin-top:4px">
+        <button class="btn-sm" @click="saveProfile()" :disabled="!profileName">Сохранить</button>
+        <button class="btn-danger" @click="deleteProfile()" x-show="profileName">Удалить</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Content ───────────────────────────────────────────────── -->
+  <div class="content">
+    <div class="step-header">
+      <h1 x-text="['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build'][step-1]"></h1>
+    </div>
+
+    <!-- ── Step 1: Target ──────────────────────────────────────── -->
+    <div class="step-body two-col" x-show="step === 1">
+      <div class="col-main">
+        <div>
+          <div class="section-label" style="margin-bottom:12px">Выберите Target</div>
+          <div class="card-grid">
+            <template x-for="(t, key) in targets" :key="key">
+              <button class="target-card" :class="{ active: profile.target === key }" @click="selectTarget(key)">
+                <span class="target-abbr" x-text="abbr(key)"></span>
+                <div class="target-name" x-text="key"></div>
+                <div class="target-desc" x-text="t.description"></div>
+                <span class="status-badge" :class="t.status" x-text="t.status"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Размер образа</div>
+          <div class="preset-row">
+            <template x-for="p in sizePresets" :key="p.id">
+              <button class="preset-btn" :class="{ active: selectedPreset === p.id }" @click="applyPreset(p)">
+                <div x-text="p.label"></div>
+                <div class="preset-sub mono" x-show="p.id !== 'custom'"
+                  x-text="`boot: ${p.boot_mb} MB · rootfs: ~${p.size_mb - p.boot_mb} MB`"></div>
+                <div class="preset-sub" x-show="p.id === 'custom'">manual sliders</div>
+              </button>
+            </template>
+          </div>
+
+          <div x-show="selectedPreset === 'custom'" class="sliders">
+            <div class="slider-row">
+              <label>Total image size</label>
+              <span class="mono" x-text="profile.image.size_mb + ' MB'"></span>
+            </div>
+            <input type="range" min="256" max="8192" step="64" x-model.number="profile.image.size_mb" class="full-width">
+            <div class="slider-row">
+              <label>Boot partition</label>
+              <span class="mono" x-text="profile.image.boot_mb + ' MB'"></span>
+            </div>
+            <input type="range" min="32" max="512" step="32" x-model.number="profile.image.boot_mb" class="full-width">
+          </div>
+
+          <div class="rootfs-summary">
+            <span>rootfs (calculated)</span>
+            <span class="mono" :class="rootfsMb > 0 ? 'ok' : 'err'" x-text="rootfsMb + ' MB'"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-aside">
+        <div class="card" x-show="targets[profile.target]">
+          <div class="card-label">Target properties</div>
+          <table class="props-table">
+            <tbody>
+              <template x-for="row in targetProps()" :key="row[0]">
+                <tr>
+                  <td class="prop-key" x-text="row[0]"></td>
+                  <td class="prop-val mono" x-text="row[1]"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="card" x-show="targets[profile.target]?.boot_cmdline">
+          <div class="card-label">Boot cmdline</div>
+          <pre class="boot-cmdline mono" x-text="targets[profile.target]?.boot_cmdline"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 2: Branding & Network ──────────────────────────── -->
+    <div class="step-body step-sections" x-show="step === 2">
+      <div class="card">
+        <div class="card-title">Branding</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Hostname</label>
+            <input x-model="profile.branding.hostname" placeholder="mobileos">
+          </div>
+          <div class="field">
+            <label>Version</label>
+            <input x-model="profile.branding.version" placeholder="0.1.0">
+          </div>
+          <div class="field">
+            <label>Root password</label>
+            <input type="password" x-model="profile.branding.root_password" placeholder="пусто = вход без пароля">
+          </div>
+          <div class="field">
+            <label>Serial console</label>
+            <select x-model="profile.branding.console">
+              <option value="ttyAMA0">ttyAMA0 (QEMU / RPi ARM)</option>
+              <option value="serial0">serial0 (Zero 2 W UART)</option>
+              <option value="tty1">tty1</option>
+            </select>
+          </div>
+          <div class="field field-full">
+            <label>SSH authorized key</label>
+            <textarea x-model="profile.branding.ssh_authorized_key" rows="2"
+              placeholder="ssh-ed25519 AAAA..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Сеть — eth0 / QEMU virtio</div>
+        <div class="net-mode-row">
+          <template x-for="m in ['dhcp','static','disabled']" :key="m">
+            <button class="net-mode-btn" :class="{ active: profile.network.eth0.mode === m }"
+              @click="profile.network.eth0.mode = m" x-text="m"></button>
+          </template>
+        </div>
+        <div class="form-grid" x-show="profile.network.eth0.mode === 'static'">
+          <div class="field">
+            <label>IP адрес</label>
+            <input x-model="profile.network.eth0.address" placeholder="192.168.1.10">
+          </div>
+          <div class="field">
+            <label>Gateway</label>
+            <input x-model="profile.network.eth0.gateway" placeholder="192.168.1.1">
+          </div>
+          <div class="field">
+            <label>DNS</label>
+            <input x-model="profile.network.eth0.dns" placeholder="1.1.1.1">
+          </div>
+        </div>
+      </div>
+
+      <div class="card" x-show="targets[profile.target]?.wifi_capable">
+        <div class="card-title">Wi-Fi (brcmfmac)</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>SSID</label>
+            <input x-model="profile.network.wifi.ssid" placeholder="my-wifi">
+          </div>
+          <div class="field">
+            <label>PSK</label>
+            <input type="password" x-model="profile.network.wifi.psk" placeholder="пароль">
+          </div>
+          <div class="field">
+            <label>Страна</label>
+            <input x-model="profile.network.wifi.country" placeholder="RU" style="width:80px">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 3: Packages ─────────────────────────────────────── -->
+    <div class="step-body pkg-layout" x-show="step === 3">
+      <div class="pkg-sidebar">
+        <div class="section-label" style="padding: 0 12px">Категории</div>
+        <button class="cat-btn" :class="{ active: pkgCategory === null }" @click="pkgCategory = null">All</button>
+        <template x-for="cat in catalogue.categories" :key="cat.id">
+          <button class="cat-btn" :class="{ active: pkgCategory === cat.id }"
+            @click="pkgCategory = cat.id" x-text="cat.name"></button>
+        </template>
+
+        <div class="section-label" style="padding: 14px 12px 4px">Presets</div>
+        <button class="cat-btn preset" @click="applyPkgPreset('minimal')">Minimal (QEMU)</button>
+        <button class="cat-btn preset" @click="applyPkgPreset('full')">Full (Zero 2 W)</button>
+      </div>
+
+      <div class="pkg-main">
+        <div class="pkg-toolbar">
+          <input class="search-input" x-model="pkgSearch" placeholder="Поиск пакетов…">
+          <button class="btn-outline" @click="showModal = true">+ Custom BR2_PACKAGE</button>
+        </div>
+        <div class="pkg-list">
+          <template x-for="cat in filteredCats" :key="cat.id">
+            <div>
+              <div class="cat-header" x-text="cat.name"></div>
+              <template x-for="pkg in cat.packages" :key="pkg.key">
+                <label class="pkg-row" :class="{ checked: enabled.has(pkg.key) }">
+                  <input type="checkbox"
+                    :checked="enabled.has(pkg.key) || pkg.required"
+                    :disabled="pkg.required"
+                    @change="toggle(pkg)">
+                  <div class="pkg-info">
+                    <div class="pkg-name-row">
+                      <span class="mono pkg-name" x-text="pkg.name"></span>
+                      <span class="badge-required" x-show="pkg.required">required</span>
+                    </div>
+                    <div class="pkg-desc" x-text="pkg.description"></div>
+                  </div>
+                  <span class="pkg-size" x-text="fmtKb(pkg.size_kb)"></span>
+                </label>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div class="pkg-summary">
+        <div class="section-label">Summary</div>
+        <div class="summary-row"><span>Выбрано</span><span class="mono" x-text="enabled.size"></span></div>
+        <div class="summary-row"><span>Est. size</span><span class="mono" x-text="fmtKb(totalKb)"></span></div>
+        <div class="summary-row"><span>Custom</span><span class="mono" x-text="profile.packages.custom.length"></span></div>
+
+        <div x-show="profile.packages.custom.length > 0" style="margin-top:12px">
+          <div class="section-label" style="margin-bottom:6px">Custom lines</div>
+          <template x-for="line in profile.packages.custom" :key="line">
+            <div class="custom-line">
+              <span class="mono" x-text="line"></span>
+              <button class="btn-remove" @click="removeCustom(line)">×</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 4: Telegram & SIM ───────────────────────────────── -->
+    <div class="step-body step-sections" x-show="step === 4">
+      <div class="card">
+        <div class="card-title">Telegram (telegramd + TDLib)</div>
+        <p class="card-note">
+          Credentials записываются в <code>/etc/telegramd.env</code> через <code>gatekeeper provision</code>.
+          При первом запуске telegramd запросит код авторизации на указанный номер.
+        </p>
+        <div class="form-grid">
+          <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" x-model="profile.telegram.enabled">
+              Включить telegramd
+            </label>
+          </div>
+          <div class="field" x-show="profile.telegram.enabled">
+            <label>Phone (для авторизации)</label>
+            <input x-model="profile.telegram.phone" placeholder="+71234567890">
+          </div>
+          <div class="field" x-show="profile.telegram.enabled">
+            <label>TG_API_ID</label>
+            <input x-model="profile.telegram.api_id" placeholder="12345678">
+          </div>
+          <div class="field" x-show="profile.telegram.enabled">
+            <label>TG_API_HASH</label>
+            <input x-model="profile.telegram.api_hash" placeholder="abc123...">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">SIM800L (simd)</div>
+        <p class="card-note">
+          Демон работает через AT-команды на UART. Поддерживает DIAL, HANGUP, ANSWER, SEND_SMS.
+          Только для zero2w-phone (нет UART в QEMU).
+        </p>
+        <div class="form-grid">
+          <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" x-model="profile.sim.enabled">
+              Включить simd
+            </label>
+          </div>
+          <div class="field" x-show="profile.sim.enabled">
+            <label>Serial порт</label>
+            <select x-model="profile.sim.port">
+              <option value="/dev/ttyS0">/dev/ttyS0</option>
+              <option value="/dev/ttyAMA1">/dev/ttyAMA1</option>
+              <option value="/dev/ttyUSB0">/dev/ttyUSB0</option>
+            </select>
+          </div>
+          <div class="field" x-show="profile.sim.enabled">
+            <label>Baud rate</label>
+            <select x-model.number="profile.sim.baud">
+              <option value="9600">9600</option>
+              <option value="115200">115200</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 5: Build ────────────────────────────────────────── -->
+    <div class="step-body build-layout" x-show="step === 5">
+      <div class="build-controls">
+        <div class="field">
+          <label>Имя профиля</label>
+          <input x-model="profileName" placeholder="my-build" style="width:220px">
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" @click="saveProfile()" :disabled="!profileName">Сохранить профиль</button>
+          <button class="btn-build" @click="startBuild()" :disabled="building || !profileName">
+            <span x-show="!building">▶ Запустить сборку</span>
+            <span x-show="building">Сборка…</span>
+          </button>
+        </div>
+        <div class="build-stage" x-show="buildStage" x-text="buildStage"></div>
+      </div>
+
+      <div class="build-log-wrap">
+        <div class="build-log" id="build-log">
+          <template x-for="(ev, i) in buildLog" :key="i">
+            <div class="log-line" :class="ev.level || ev.event" x-text="ev.data || ev.text || ev.message"></div>
+          </template>
+          <span class="log-cursor" x-show="building">▌</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer nav -->
+    <div class="step-footer">
+      <button class="btn-secondary" @click="step--" x-show="step > 1">← Назад</button>
+      <button class="btn-primary"   @click="step++" x-show="step < 5">Далее →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Custom package modal ──────────────────────────────────── -->
+<div class="modal-overlay" x-show="showModal" x-cloak @click.self="showModal = false">
+  <div class="modal" @click.stop>
+    <h3>Добавить custom BR2_PACKAGE</h3>
+    <input x-model="customInput" placeholder="BR2_PACKAGE_SOCAT=y"
+      @keydown.enter="addCustom()" x-effect="showModal && $el.focus()">
+    <div class="btn-row" style="justify-content:flex-end">
+      <button class="btn-secondary" @click="showModal = false">Отмена</button>
+      <button class="btn-primary" @click="addCustom()">Добавить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ABBR = { 'qemu-aarch64': 'QEMU·ARM', 'zero2w-phone': 'Zero2W' }
+
+const SIZE_PRESETS = [
+  { id:'qemu',   label:'QEMU · 512 MB',  size_mb:512,  boot_mb:64  },
+  { id:'sd_2g',  label:'SD · 2 GB',      size_mb:2048, boot_mb:256 },
+  { id:'sd_4g',  label:'SD · 4 GB',      size_mb:4096, boot_mb:256 },
+  { id:'custom', label:'Custom',          size_mb:0,    boot_mb:0   },
+]
+
+const MINIMAL_QEMU = [
+  'BR2_PACKAGE_COMMD','BR2_PACKAGE_NETD','BR2_PACKAGE_POWERD',
+  'BR2_PACKAGE_LOCALBE','BR2_PACKAGE_HARDWARED',
+]
+const FULL_ZERO2W = [
+  'BR2_PACKAGE_COMMD','BR2_PACKAGE_NETD','BR2_PACKAGE_POWERD',
+  'BR2_PACKAGE_LOCALBE','BR2_PACKAGE_HARDWARED',
+  'BR2_PACKAGE_SIMD','BR2_PACKAGE_TDJSON','BR2_PACKAGE_TELEGRAMD',
+  'BR2_PACKAGE_LVGL','BR2_PACKAGE_MOBILE_SHELL',
+]
+
+function mkProfile() {
+  return {
+    name: '',
+    target: 'qemu-aarch64',
+    branding: { hostname:'mobileos', version:'0.1.0', root_password:'', ssh_authorized_key:'', console:'ttyAMA0' },
+    network: {
+      eth0:  { mode:'dhcp', address:'', gateway:'', dns:'' },
+      wifi:  { country:'RU', ssid:'', psk:'' },
+    },
+    image:    { size_mb:512, boot_mb:64 },
+    packages: { enabled:[], custom:[] },
+    telegram: { enabled:false, phone:'', api_id:'', api_hash:'' },
+    sim:      { enabled:false, port:'/dev/ttyS0', baud:9600 },
+  }
+}
+
+function app() {
+  return {
+    step: 1,
+    profile: mkProfile(),
+    profileName: '',
+    profiles: [],
+    targets: {},
+    catalogue: { categories:[] },
+    sizePresets: SIZE_PRESETS,
+    selectedPreset: 'qemu',
+    pkgSearch: '',
+    pkgCategory: null,
+    showModal: false,
+    customInput: '',
+    buildLog: [],
+    building: false,
+    buildStage: '',
+
+    async init() {
+      const [t, p, pr] = await Promise.all([
+        fetch('/api/targets').then(r => r.json()),
+        fetch('/api/packages').then(r => r.json()),
+        fetch('/api/profiles').then(r => r.json()),
+      ])
+      this.targets   = t
+      this.catalogue = p
+      this.profiles  = pr
+    },
+
+    // ── computed ───────────────────────────────────────────────
+    get rootfsMb() { return this.profile.image.size_mb - this.profile.image.boot_mb },
+    get enabled()  { return new Set(this.profile.packages.enabled) },
+
+    get filteredCats() {
+      const q = this.pkgSearch.toLowerCase()
+      return this.catalogue.categories
+        .filter(c => !this.pkgCategory || c.id === this.pkgCategory)
+        .map(c => ({ ...c, packages: c.packages.filter(p =>
+          !q || p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) || p.key.toLowerCase().includes(q)
+        )}))
+        .filter(c => c.packages.length > 0)
+    },
+
+    get totalKb() {
+      const en = this.enabled
+      return this.catalogue.categories
+        .flatMap(c => c.packages)
+        .filter(p => en.has(p.key))
+        .reduce((a, p) => a + (p.size_kb || 0), 0)
+    },
+
+    // ── methods ────────────────────────────────────────────────
+    abbr(key) { return ABBR[key] || key.toUpperCase() },
+
+    selectTarget(key) {
+      this.profile.target = key
+      const isQemu = key === 'qemu-aarch64'
+      const p = isQemu ? SIZE_PRESETS[0] : SIZE_PRESETS[1]
+      this.selectedPreset = p.id
+      this.profile.image.size_mb = p.size_mb
+      this.profile.image.boot_mb = p.boot_mb
+      if (isQemu) this.profile.branding.console = 'ttyAMA0'
+      else        this.profile.branding.console = 'serial0'
+    },
+
+    applyPreset(p) {
+      this.selectedPreset = p.id
+      if (p.id !== 'custom') {
+        this.profile.image.size_mb = p.size_mb
+        this.profile.image.boot_mb = p.boot_mb
+      }
+    },
+
+    targetProps() {
+      const t = this.targets[this.profile.target]
+      if (!t) return []
+      return [
+        ['arch',    t.arch],
+        ['kernel',  t.kernel_defconfig],
+        ['image',   t.image_name],
+        ['qemu',    t.qemu_supported ? 'yes' : 'no'],
+        ['wifi',    t.wifi_capable   ? 'yes' : 'no'],
+        ['ssh port', String(t.ssh_port || 22)],
+      ]
+    },
+
+    toggle(pkg) {
+      if (pkg.required) return
+      const next = new Set(this.enabled)
+      next.has(pkg.key) ? next.delete(pkg.key) : next.add(pkg.key)
+      this.profile.packages.enabled = [...next]
+    },
+
+    applyPkgPreset(name) {
+      this.profile.packages.enabled = [...new Set(name === 'full' ? FULL_ZERO2W : MINIMAL_QEMU)]
+    },
+
+    addCustom() {
+      const line = this.customInput.trim()
+      if (!line) return
+      this.profile.packages.custom = [...this.profile.packages.custom, line]
+      this.customInput = ''
+      this.showModal   = false
+    },
+
+    removeCustom(line) {
+      this.profile.packages.custom = this.profile.packages.custom.filter(l => l !== line)
+    },
+
+    fmtKb(kb) {
+      if (!kb) return '—'
+      return kb >= 1024 ? `${(kb/1024).toFixed(1)} MB` : `${kb} KB`
+    },
+
+    async saveProfile() {
+      if (!this.profileName) return
+      const body = { ...this.profile, name: this.profileName }
+      await fetch(`/api/profiles/${this.profileName}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      this.profiles = await fetch('/api/profiles').then(r => r.json())
+    },
+
+    async loadProfile(name) {
+      if (!name) { this.profile = mkProfile(); return }
+      this.profile     = await fetch(`/api/profiles/${name}`).then(r => r.json())
+      this.profileName = name
+      this.selectedPreset = this.detectPreset(this.profile.image.size_mb, this.profile.image.boot_mb)
+    },
+
+    async deleteProfile() {
+      if (!this.profileName) return
+      await fetch(`/api/profiles/${this.profileName}`, { method: 'DELETE' })
+      this.profileName = ''
+      this.profile     = mkProfile()
+      this.profiles    = await fetch('/api/profiles').then(r => r.json())
+    },
+
+    detectPreset(size_mb, boot_mb) {
+      const p = SIZE_PRESETS.find(p => p.id !== 'custom' && p.size_mb === size_mb && p.boot_mb === boot_mb)
+      return p ? p.id : 'custom'
+    },
+
+    async startBuild() {
+      if (!this.profileName) return
+      await this.saveProfile()
+      this.buildLog   = []
+      this.building   = true
+      this.buildStage = 'Запуск…'
+
+      const res = await fetch(`/api/profiles/${this.profileName}/build`, { method: 'POST' })
+      if (!res.ok) {
+        this.buildLog.push({ event:'error', data: await res.text() })
+        this.building = false
+        return
+      }
+      const { build_id } = await res.json()
+      const es = new EventSource(`/api/builds/${build_id}/events`)
+
+      es.onmessage = e => {
+        const ev = JSON.parse(e.data)
+        this.buildLog.push(ev)
+        if (ev.level === 'stage') this.buildStage = ev.data
+        this.$nextTick(() => {
+          const el = document.getElementById('build-log')
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      }
+      es.addEventListener('done', () => {
+        es.close()
+        this.building   = false
+        this.buildStage = 'Готово ✓'
+      })
+      es.onerror = () => {
+        es.close()
+        this.building = false
+      }
+    },
+  }
+}
+</script>
+</body>
+</html>
