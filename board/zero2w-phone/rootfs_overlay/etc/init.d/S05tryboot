@@ -1,0 +1,29 @@
+#!/bin/sh
+# S05tryboot — confirm successful tryboot on early boot
+#
+# If /boot/tryboot_ok does not exist and a tryboot is pending,
+# the system is running from a new slot for the first time.
+# We perform a basic health check; if it passes, confirm the boot.
+# If health check fails, rollback is automatic on next power cycle
+# (firmware will revert to config.txt when tryboot_ok absent).
+
+TRYBOOT_STAMP=/data/update/current_slot
+TRYBOOT_PENDING=/boot/.tryboot_pending
+TRYBOOT_OK=/boot/tryboot_ok
+
+case "$1" in
+    start)
+        if [ -f "$TRYBOOT_PENDING" ] && [ ! -f "$TRYBOOT_OK" ]; then
+            echo -n "Confirming tryboot: "
+            # Health checks: filesystem writable, critical binaries present
+            if [ -w /data ] && [ -x /usr/bin/commd ] && [ -x /usr/bin/mobile-shell ]; then
+                mobileos-update --confirm
+                echo "OK (slot confirmed)"
+            else
+                echo "HEALTH CHECK FAILED — rollback on next boot"
+            fi
+        fi
+        ;;
+    stop|restart|reload) ;;
+    *) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

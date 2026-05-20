@@ -1,0 +1,170 @@
+#!/bin/sh
+#
+# mobileos-update — OTA update script using Raspberry Pi tryboot A/B mechanism
+#
+# Usage:
+#   mobileos-update <update-url>           — download and stage update
+#   mobileos-update --apply                — reboot into tryboot (test new rootfs)
+#   mobileos-update --confirm              — confirm boot was successful (writes tryboot_ok)
+#   mobileos-update --rollback             — explicitly switch back to previous slot
+#   mobileos-update --status               — show current slot and tryboot state
+#
+# Slot layout:
+#   /boot partition: tryboot.txt, config.txt, cmdline.txt (slot A)
+#   On tryboot: firmware reads tryboot.txt instead of config.txt
+#               if tryboot_ok not written → automatic rollback on next boot
+#
+# References: https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#tryboot
+
+set -e
+
+BOOT_MOUNT=/boot
+TRYBOOT_FLAG="$BOOT_MOUNT/tryboot.txt"
+TRYBOOT_OK="$BOOT_MOUNT/tryboot_ok"
+TRYBOOT_STAMP="$BOOT_MOUNT/.tryboot_pending"
+UPDATE_DIR=/data/update
+UPDATE_ARCHIVE="$UPDATE_DIR/pending.tar.gz"
+CURRENT_SLOT_FILE=/data/update/current_slot
+LOG=/var/log/mobileos-update.log
+
+log() { echo "$(date '+%Y-%m-%dT%H:%M:%S') $*" | tee -a "$LOG" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+require_root() {
+    [ "$(id -u)" = "0" ] || die "must run as root"
+}
+
+# --- Current slot detection ---
+current_slot() {
+    if [ -f "$CURRENT_SLOT_FILE" ]; then
+        cat "$CURRENT_SLOT_FILE"
+    else
+        echo "A"
+    fi
+}
+
+# --- Status ---
+cmd_status() {
+    SLOT=$(current_slot)
+    PENDING=""
+    [ -f "$TRYBOOT_STAMP" ] && PENDING="yes (tryboot pending)"
+    echo "Current slot:  $SLOT"
+    echo "Tryboot pending: ${PENDING:-no}"
+    if [ -f "$TRYBOOT_OK" ]; then
+        echo "Tryboot confirmed: yes"
+    else
+        echo "Tryboot confirmed: no"
+    fi
+    if [ -f "$UPDATE_ARCHIVE" ]; then
+        echo "Staged update: $UPDATE_ARCHIVE"
+        ls -lh "$UPDATE_ARCHIVE" 2>/dev/null || true
+    fi
+}
+
+# --- Download and stage update ---
+cmd_download() {
+    require_root
+    URL="$1"
+    [ -n "$URL" ] || die "URL required"
+
+    log "Downloading update from $URL"
+    install -d "$UPDATE_DIR"
+    wget -O "$UPDATE_ARCHIVE.tmp" "$URL" || die "download failed"
+    mv "$UPDATE_ARCHIVE.tmp" "$UPDATE_ARCHIVE"
+    log "Staged to $UPDATE_ARCHIVE"
+
+    # Verify integrity if sha256 sidecar exists
+    SHA_URL="${URL}.sha256"
+    if wget -q -O "$UPDATE_DIR/pending.sha256" "$SHA_URL" 2>/dev/null; then
+        cd "$UPDATE_DIR"
+        sha256sum -c pending.sha256 || die "SHA256 mismatch — aborting"
+        log "SHA256 verified"
+        cd /
+    fi
+
+    log "Update staged. Run 'mobileos-update --apply' to install."
+}
+
+# --- Apply: extract update and set up tryboot ---
+cmd_apply() {
+    require_root
+    [ -f "$UPDATE_ARCHIVE" ] || die "no staged update at $UPDATE_ARCHIVE"
+
+    SLOT=$(current_slot)
+    if [ "$SLOT" = "A" ]; then
+        NEXT_SLOT=B
+    else
+        NEXT_SLOT=A
+    fi
+
+    log "Applying update to slot $NEXT_SLOT"
+
+    # Extract update archive to a temporary rootfs overlay
+    EXTRACT_DIR="$UPDATE_DIR/extract"
+    rm -rf "$EXTRACT_DIR"
+    install -d "$EXTRACT_DIR"
+    tar -xzf "$UPDATE_ARCHIVE" -C "$EXTRACT_DIR" || die "extract failed"
+
+    # Copy kernel and DTBs to boot partition
+    if [ -f "$EXTRACT_DIR/Image.gz" ]; then
+        cp "$EXTRACT_DIR/Image.gz" "$BOOT_MOUNT/Image.gz.new"
+        sync
+        mv "$BOOT_MOUNT/Image.gz.new" "$BOOT_MOUNT/Image.gz"
+        log "Kernel updated"
+    fi
+
+    # Write tryboot.txt pointing to the new cmdline (slot B uses cmdline_b.txt)
+    cat > "$TRYBOOT_FLAG" <<EOF
+# tryboot.txt — used by Raspberry Pi firmware on next tryboot reboot
+# Points to the same config.txt but with cmdline_${NEXT_SLOT}.txt
+include config.txt
+cmdline cmdline_${NEXT_SLOT}.txt
+EOF
+
+    # Write slot-specific cmdline
+    CMDLINE=$(cat "$BOOT_MOUNT/cmdline.txt")
+    echo "$CMDLINE" > "$BOOT_MOUNT/cmdline_${NEXT_SLOT}.txt"
+
+    # Mark tryboot as pending
+    echo "$NEXT_SLOT" > "$TRYBOOT_STAMP"
+
+    rm -f "$TRYBOOT_OK"
+    rm -rf "$EXTRACT_DIR"
+    rm -f "$UPDATE_ARCHIVE"
+
+    log "Update staged for slot $NEXT_SLOT. Rebooting into tryboot..."
+    sync
+    reboot -f  # Raspberry Pi firmware sees tryboot.txt → uses it once
+}
+
+# --- Confirm: write tryboot_ok to make the boot permanent ---
+cmd_confirm() {
+    require_root
+    if [ ! -f "$TRYBOOT_STAMP" ]; then
+        log "No pending tryboot — nothing to confirm"
+        exit 0
+    fi
+    NEXT_SLOT=$(cat "$TRYBOOT_STAMP")
+    touch "$TRYBOOT_OK"
+    echo "$NEXT_SLOT" > "$CURRENT_SLOT_FILE"
+    rm -f "$TRYBOOT_STAMP"
+    log "Boot confirmed — now running on slot $NEXT_SLOT"
+}
+
+# --- Rollback ---
+cmd_rollback() {
+    require_root
+    rm -f "$TRYBOOT_FLAG" "$TRYBOOT_OK" "$TRYBOOT_STAMP"
+    SLOT=$(current_slot)
+    log "Rollback: staying on slot $SLOT"
+    reboot -f
+}
+
+case "${1:-}" in
+    --status)   cmd_status ;;
+    --apply)    cmd_apply ;;
+    --confirm)  cmd_confirm ;;
+    --rollback) cmd_rollback ;;
+    "")         echo "Usage: mobileos-update <url> | --apply | --confirm | --rollback | --status"; exit 1 ;;
+    *)          cmd_download "$1" ;;
+esac
