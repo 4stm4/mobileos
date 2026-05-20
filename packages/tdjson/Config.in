@@ -1,0 +1,10 @@
+config BR2_PACKAGE_TDJSON
+	bool "tdjson — TDLib JSON interface library"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_ZLIB
+	help
+	  TDLib (Telegram Database Library) built with the JSON interface.
+	  Provides libtdjson.so for use by telegramd.
+	  Build is CPU-intensive (~20 min on the host).

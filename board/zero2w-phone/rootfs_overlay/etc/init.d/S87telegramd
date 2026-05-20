@@ -1,0 +1,49 @@
+#!/bin/sh
+# telegramd — Telegram client daemon (lazy-start)
+# Only started when /data/telegramd/account_exists is present.
+
+DAEMON=/usr/bin/telegramd
+PIDFILE=/var/run/telegramd.pid
+LOGFILE=/var/log/telegramd.log
+ACCOUNT_MARKER=/data/telegramd/account_exists
+
+# TG_API_ID and TG_API_HASH must be set by provisioning (gatekeeper, M12)
+# For development, export them in /etc/telegramd.env
+[ -f /etc/telegramd.env ] && . /etc/telegramd.env
+
+case "$1" in
+    start)
+        echo -n "Starting telegramd: "
+        if [ ! -x "$DAEMON" ]; then
+            echo "not installed"
+            exit 0
+        fi
+        if [ ! -f "$ACCOUNT_MARKER" ]; then
+            echo "no account (skipped — auth via Settings → Telegram)"
+            exit 0
+        fi
+        install -d /data/telegramd
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping telegramd: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 10
+        rm -f "$PIDFILE" /run/telegramd.sock
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
