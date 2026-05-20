@@ -18,7 +18,8 @@ OUTPUT_DIR        ?= $(abspath output/zero2w-phone)
 DEFCONFIG         := $(EXTERNAL_DIR)/products/mobile-os/configs/zero2w-phone_defconfig
 BR_MAKE           := $(MAKE) -C $(BUILDROOT_DIR) BR2_EXTERNAL=$(EXTERNAL_DIR) O=$(OUTPUT_DIR)
 
-.PHONY: all setup defconfig build image menuconfig linux-menuconfig savedefconfig clean distclean help
+.PHONY: all setup defconfig build image menuconfig linux-menuconfig savedefconfig clean distclean help \
+        release provision flash
 
 all: build
 
@@ -61,7 +62,25 @@ clean:
 distclean: clean
 	rm -rf $(BUILDROOT_DIR)
 
+## release targets
+## ─────────────────────────────────────────────────────────────────────────
+release: build
+	@echo "[release] Packaging SD image..."
+	. $(EXTERNAL_DIR)/VERSION && \
+	cp $(OUTPUT_DIR)/images/sdcard.img \
+	   $(OUTPUT_DIR)/images/mobileos-$${MOBILEOS_VERSION}-$${MOBILEOS_CODENAME}.img
+	@echo "[release] Image: $(OUTPUT_DIR)/images/mobileos-*.img"
+
+provision:
+	@echo "Usage: python3 tools/gatekeeper/gatekeeper.py provision <device-ip> [options]"
+	python3 tools/gatekeeper/gatekeeper.py --help
+
+flash:
+	@echo "Usage: python3 tools/gatekeeper/gatekeeper.py flash <sdcard-dev> <image>"
+	python3 tools/gatekeeper/gatekeeper.py --help
+
 help:
 	@grep -E '^##' Makefile | sed 's/^## *//'
 	@echo ""
-	@echo "Targets: setup defconfig build image menuconfig linux-menuconfig savedefconfig clean distclean"
+	@echo "Targets: setup defconfig build image menuconfig linux-menuconfig savedefconfig"
+	@echo "         clean distclean release provision flash"
