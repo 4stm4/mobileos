@@ -1,0 +1,11 @@
+[package]
+name = "simd"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "simd"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

@@ -1,0 +1,41 @@
+#!/bin/sh
+# simd — SIM800L AT-command daemon
+
+DAEMON=/usr/bin/simd
+PIDFILE=/var/run/simd.pid
+LOGFILE=/var/log/simd.log
+
+# SIM800L is on ttyAMA0 (UART0, pins 8/10)
+export SIMD_TTY=/dev/ttyAMA0
+
+case "$1" in
+    start)
+        echo -n "Starting simd: "
+        if [ ! -x "$DAEMON" ]; then
+            echo "not installed"
+            exit 0
+        fi
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping simd: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        rm -f "$PIDFILE" /run/simd.sock
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
