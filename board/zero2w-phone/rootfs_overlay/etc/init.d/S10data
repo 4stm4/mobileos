@@ -1,0 +1,24 @@
+#!/bin/sh
+# Ensure /data persistent partition is mounted and directories exist
+# /data lives on a future third partition; for M1 we create it on rootfs.
+
+DATADIR=/data
+
+case "$1" in
+    start)
+        echo -n "Preparing /data: "
+        install -d -m 0755 "$DATADIR/commd"
+        install -d -m 0755 "$DATADIR/spool"
+        install -d -m 0750 "$DATADIR/wireguard"
+        install -d -m 0755 "$DATADIR/telegramd"
+        install -d -m 0755 "$DATADIR/localbe"
+        install -d -m 0755 "$DATADIR/hardwared"
+        echo "OK"
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac

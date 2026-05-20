@@ -1,0 +1,20 @@
+# /etc/inittab — sysvinit for 4STM4 Mobile OS
+
+# Default runlevel
+id:5:initdefault:
+
+# System initialization
+si::sysinit:/etc/init.d/rcS
+
+# Runlevel 5 (normal) and 6 (reboot)
+l5:5:wait:/etc/init.d/rc 5
+l6:6:wait:/etc/init.d/rc 6
+
+# Safe shutdown on Ctrl-Alt-Del (powerd will handle gracefully)
+ca::ctrlaltdel:/sbin/reboot
+
+# Serial console (for development / SIM800L debug)
+s0:12345:respawn:/sbin/getty -L ttyAMA0 115200 vt100
+
+# Reboot/halt actions
+su:S6:wait:/sbin/halt

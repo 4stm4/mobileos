@@ -1,0 +1,9 @@
+# /etc/network/interfaces
+# Managed by netd at runtime — this is the static fallback
+
+auto lo
+iface lo inet loopback
+
+# Wi-Fi — netd will configure wpa_supplicant and udhcpc
+# auto wlan0
+# iface wlan0 inet manual
