@@ -1,0 +1,55 @@
+menu "Mobile OS product options"
+
+config BR2_PACKAGE_MOBILE_SHELL
+	bool "mobile-shell"
+	default y
+	help
+	  LVGL-based mobile shell — launcher, dialer, messages, settings.
+
+config BR2_PACKAGE_COMMD
+	bool "commd — communication daemon"
+	default y
+	help
+	  Central IPC hub: ui.sock / backend.sock / admin.sock.
+	  Line-delimited JSON envelope protocol with SO_PEERCRED auth.
+
+config BR2_PACKAGE_SIMD
+	bool "simd — SIM800 daemon"
+	default y
+	help
+	  AT-command bridge to SIM800L; exposes commd backend socket API.
+
+config BR2_PACKAGE_NETD
+	bool "netd — network daemon"
+	default y
+	help
+	  WireGuard primary + AmneziaWG add-on, DNS management.
+
+config BR2_PACKAGE_TELEGRAMD
+	bool "telegramd — Telegram client daemon (TDLib)"
+	default y
+	depends on BR2_PACKAGE_COMMD
+	help
+	  Lazy-start Telegram integration via TDLib FFI.
+	  Only starts when a Telegram account is provisioned.
+
+config BR2_PACKAGE_LOCALBE
+	bool "localbe — local messaging backend"
+	default y
+	depends on BR2_PACKAGE_COMMD
+	help
+	  Draft/local-only message backend; SQLite spool.
+
+config BR2_PACKAGE_HARDWARED
+	bool "hardwared — HAT/hardware detection daemon"
+	default y
+	help
+	  Detects attached HATs via ehatrom EEPROM; loads profiles.
+
+config BR2_PACKAGE_POWERD
+	bool "powerd — power management daemon"
+	default y
+	help
+	  Screen dim/off, battery monitoring, safe shutdown.
+
+endmenu

@@ -1,0 +1,10 @@
+config BR2_PACKAGE_TELEGRAMD
+	bool "telegramd — Telegram client daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_COMMD
+	help
+	  Telegram integration via TDLib FFI.
+	  Lazy-start: only activates when a Telegram account is provisioned.
+	  Manual-media-only; light mode by default.
+	  Connects to commd backend.sock.

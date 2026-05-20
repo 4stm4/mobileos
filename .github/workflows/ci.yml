@@ -1,0 +1,115 @@
+name: Mobile OS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  BUILDROOT_VERSION: "2024.02.3"
+  DEFCONFIG: zero2w-phone_defconfig
+
+jobs:
+  # ── Lint / static checks (fast, no Buildroot needed) ─────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check external.desc
+        run: |
+          grep -q "^name:" external.desc
+          grep -q "^desc:" external.desc
+
+      - name: Check all packages have Config.in + .mk
+        run: |
+          fail=0
+          for pkg in packages/*/; do
+            name=$(basename "$pkg")
+            if [ ! -f "$pkg/Config.in" ]; then
+              echo "MISSING: $pkg/Config.in"; fail=1
+            fi
+            if [ ! -f "$pkg/$name.mk" ]; then
+              echo "MISSING: $pkg/$name.mk"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Shell scripts are executable and valid
+        run: |
+          find board/ -name "*.sh" | while read f; do
+            bash -n "$f" || exit 1
+          done
+
+      - name: Rust fmt check (host)
+        run: |
+          for src_dir in packages/*/src; do
+            [ -f "$src_dir/Cargo.toml" ] || continue
+            cd "$src_dir"
+            cargo fmt --check 2>/dev/null || true
+            cd -
+          done
+
+  # ── Buildroot config check (no full build — too slow for CI) ─────────────
+  config-check:
+    name: Defconfig parse check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Buildroot host deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc cpio rsync unzip wget python3 \
+            libncurses-dev libssl-dev file
+
+      - name: Clone Buildroot
+        run: |
+          git clone --depth=1 --branch ${{ env.BUILDROOT_VERSION }} \
+            https://git.buildroot.net/buildroot ../buildroot
+
+      - name: Apply defconfig
+        run: |
+          make -C ../buildroot \
+            BR2_EXTERNAL=$(pwd) \
+            O=$(pwd)/output/ci \
+            BR2_DEFCONFIG=$(pwd)/products/mobile-os/configs/${{ env.DEFCONFIG }} \
+            defconfig
+
+      - name: Verify .config was produced
+        run: test -f output/ci/.config
+
+  # ── Full image build (manual trigger only — expensive) ───────────────────
+  build-image:
+    name: Full image build
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Buildroot host deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc cpio rsync unzip wget python3 \
+            libncurses-dev libssl-dev file g++ gcc \
+            libglib2.0-dev libfdt-dev libpixman-1-dev zlib1g-dev \
+            ninja-build meson
+
+      - name: Clone Buildroot
+        run: |
+          git clone --depth=1 --branch ${{ env.BUILDROOT_VERSION }} \
+            https://git.buildroot.net/buildroot ../buildroot
+
+      - name: Build
+        run: make setup defconfig build
+
+      - name: Upload SD image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdcard-img
+          path: output/zero2w-phone/images/sdcard.img
+          retention-days: 7

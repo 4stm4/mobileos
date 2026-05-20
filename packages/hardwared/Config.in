@@ -1,0 +1,8 @@
+config BR2_PACKAGE_HARDWARED
+	bool "hardwared — hardware/HAT detection daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Detects attached HATs via ehatrom EEPROM (I2C ID EEPROM standard).
+	  Loads per-profile kernel modules and device tree overlays.
+	  Exposes hardware capabilities to other daemons.

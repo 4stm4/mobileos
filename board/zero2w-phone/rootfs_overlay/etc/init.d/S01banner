@@ -1,0 +1,3 @@
+#!/bin/sh
+# Print product banner on boot console
+printf "\n4STM4 Mobile OS — Raspberry Pi Zero 2 W\n\n"

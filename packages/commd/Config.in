@@ -1,0 +1,13 @@
+config BR2_PACKAGE_COMMD
+	bool "commd — communication daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Central IPC hub exposing three Unix sockets:
+	    ui.sock      (group comm-ui)      — shell, messages app
+	    backend.sock (group comm-backend) — simd, telegramd, localbe
+	    admin.sock   (group comm-admin)   — root/admin only
+	  SO_PEERCRED verification on every accept.
+	  Protocol: line-delimited JSON with envelope
+	  {version, type, request_id, ts_ms, source, action, body}.
+	  Backed by SQLite WAL database at /data/commd/comm.db.

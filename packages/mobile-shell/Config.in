@@ -1,0 +1,7 @@
+config BR2_PACKAGE_MOBILE_SHELL
+	bool "mobile-shell"
+	depends on BR2_PACKAGE_LVGL
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  LVGL 9.x-based mobile shell: launcher, dialer,
+	  messages UI, settings. Communicates via commd ui.sock.

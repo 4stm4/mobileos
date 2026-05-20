@@ -1,0 +1,8 @@
+config BR2_PACKAGE_SIMD
+	bool "simd — SIM800L daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  AT-command bridge to SIM800L modem.
+	  Connects to commd backend.sock and exposes call/SMS/data APIs.
+	  Reuses s1mB00L library for AT protocol handling.

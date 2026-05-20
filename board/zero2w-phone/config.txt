@@ -1,0 +1,35 @@
+# Raspberry Pi Zero 2 W — boot config
+
+# ARM64 kernel
+arm_64bit=1
+kernel=Image.gz
+
+# GPU memory (minimal — we do DRM/KMS, no VC4 3D)
+gpu_mem=16
+
+# Enable DRM/KMS display output (DSI or HDMI)
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+
+# UART for console / SIM800L
+enable_uart=1
+dtoverlay=uart0
+
+# Disable Bluetooth (we use SIM800L for modem)
+dtoverlay=disable-bt
+
+# I2C for HAT EEPROM (ehatrom)
+dtparam=i2c_arm=on
+
+# SPI
+dtparam=spi=on
+
+# USB OTG as peripheral (for adb-like access)
+dtoverlay=dwc2,dr_mode=peripheral
+
+# tryboot support (for A/B updates — M11)
+# auto_initramfs=1
+
+# Overclock: safe for Zero 2 W with adequate cooling
+# arm_freq=1200
+# over_voltage=2

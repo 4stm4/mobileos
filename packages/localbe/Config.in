@@ -1,0 +1,9 @@
+config BR2_PACKAGE_LOCALBE
+	bool "localbe — local messaging backend"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_COMMD
+	help
+	  Local-only messaging backend; manages drafts and local threads.
+	  SQLite spool at /data/spool/localbe.db.
+	  Connects to commd backend.sock.

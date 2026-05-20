@@ -1,0 +1,9 @@
+config BR2_PACKAGE_POWERD
+	bool "powerd — power management daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Screen dim (30s) / off (90s) via sysfs backlight.
+	  Battery monitoring via sysfs power_supply.
+	  Safe shutdown at 2%; alerts at 20% and 5%.
+	  Unix socket at /run/powerd.sock for ACTIVITY/STATUS/SUBSCRIBE/INHIBIT.

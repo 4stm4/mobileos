@@ -1,0 +1,12 @@
+menu "4STM4 Mobile OS packages"
+
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/mobile-shell/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/commd/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/simd/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/netd/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/telegramd/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/localbe/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/hardwared/Config.in"
+source "$BR2_EXTERNAL_MOBILEOS_PATH/packages/powerd/Config.in"
+
+endmenu

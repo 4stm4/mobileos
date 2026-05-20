@@ -1,0 +1,9 @@
+config BR2_PACKAGE_NETD
+	bool "netd — network daemon"
+	depends on BR2_PACKAGE_HOST_RUSTC
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Network management daemon.
+	  WireGuard as primary VPN; AmneziaWG as optional add-on.
+	  Manages /run/netd/resolv.conf (symlinked from /etc/resolv.conf).
+	  Wi-Fi via wpa_supplicant.
