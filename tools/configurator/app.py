@@ -7,10 +7,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from build_runner import builds, start_build, stream_events
+from flash_runner import (flashes, list_artifacts, list_devices,
+                          start_flash, stream_flash_events)
 
 BASE         = Path(__file__).parent
 PROFILES_DIR = BASE / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
+SETTINGS_FILE = BASE / "settings.yaml"
 
 app = FastAPI(title="mobileos Configurator")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
@@ -23,10 +26,19 @@ with open(BASE / "packages.yaml") as f:
     PACKAGES = yaml.safe_load(f)
 
 
+def load_settings() -> dict:
+    with open(SETTINGS_FILE) as f:
+        return yaml.safe_load(f)
+
+
+# ── UI ───────────────────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
+# ── Targets / Packages ───────────────────────────────────────────────
 
 @app.get("/api/targets")
 async def get_targets():
@@ -37,6 +49,23 @@ async def get_targets():
 async def get_packages():
     return PACKAGES
 
+
+# ── Settings ─────────────────────────────────────────────────────────
+
+@app.get("/api/settings")
+async def get_settings():
+    return load_settings()
+
+
+@app.put("/api/settings")
+async def save_settings(request: Request):
+    body = await request.json()
+    with open(SETTINGS_FILE, "w") as f:
+        yaml.dump(body, f, allow_unicode=True, sort_keys=False)
+    return {"ok": True}
+
+
+# ── Profiles ─────────────────────────────────────────────────────────
 
 @app.get("/api/profiles")
 async def list_profiles():
@@ -69,6 +98,8 @@ async def delete_profile(name: str):
     return {"ok": True}
 
 
+# ── Builds ───────────────────────────────────────────────────────────
+
 @app.post("/api/profiles/{name}/build")
 async def build_profile(name: str):
     path = PROFILES_DIR / f"{name}.yaml"
@@ -76,7 +107,8 @@ async def build_profile(name: str):
         raise HTTPException(404, "Profile not found")
     with open(path) as f:
         profile = yaml.safe_load(f)
-    profile["_targets"] = TARGETS
+    profile["_targets"]  = TARGETS
+    profile["_settings"] = load_settings()
     build_id = start_build(profile)
     return {"build_id": build_id}
 
@@ -84,7 +116,8 @@ async def build_profile(name: str):
 @app.post("/api/builds/start")
 async def build_inline(request: Request):
     profile = await request.json()
-    profile["_targets"] = TARGETS
+    profile["_targets"]  = TARGETS
+    profile["_settings"] = load_settings()
     build_id = start_build(profile)
     return {"build_id": build_id}
 
@@ -110,3 +143,41 @@ async def build_events(build_id: str):
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
+
+
+# ── Flash ────────────────────────────────────────────────────────────
+
+@app.get("/api/devices")
+async def get_devices():
+    return list_devices(load_settings())
+
+
+@app.get("/api/artifacts")
+async def get_artifacts():
+    return list_artifacts(load_settings())
+
+
+@app.post("/api/flash/start")
+async def flash_start(request: Request):
+    body   = await request.json()
+    device = body.get("device")
+    image  = body.get("image")
+    if not device or not image:
+        raise HTTPException(400, "device and image required")
+    flash_id = start_flash(device, image, load_settings())
+    return {"flash_id": flash_id}
+
+
+@app.get("/api/flash/{flash_id}/events")
+async def flash_events(flash_id: str):
+    async def generate():
+        async for chunk in stream_flash_events(flash_id):
+            yield chunk
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/flash")
+async def list_flashes():
+    return list(flashes.values())

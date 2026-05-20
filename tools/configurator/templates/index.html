@@ -16,10 +16,10 @@
     <div class="sidebar-brand">mobileos</div>
 
     <nav class="steps-nav">
-      <template x-for="(label, i) in ['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build']" :key="i">
+      <template x-for="(label, i) in ['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build', 'Flash']" :key="i">
         <button class="step-btn"
           :class="{ active: step === i+1, done: step > i+1 }"
-          @click="step = i+1">
+          @click="step = i+1; if(i+1===6) onEnterFlash()">
           <span class="step-num" x-text="i+1"></span>
           <span x-text="label"></span>
         </button>
@@ -39,12 +39,16 @@
         <button class="btn-danger" @click="deleteProfile()" x-show="profileName">Удалить</button>
       </div>
     </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-settings" @click="openSettings()">⚙ Настройки хранилищ</button>
+    </div>
   </aside>
 
   <!-- ── Content ───────────────────────────────────────────────── -->
   <div class="content">
     <div class="step-header">
-      <h1 x-text="['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build'][step-1]"></h1>
+      <h1 x-text="['Target', 'Branding & Network', 'Packages', 'Telegram & SIM', 'Build', 'Flash'][step-1]"></h1>
     </div>
 
     <!-- ── Step 1: Target ──────────────────────────────────────── -->
@@ -346,10 +350,95 @@
       </div>
     </div>
 
+    <!-- ── Step 6: Flash ────────────────────────────────────────── -->
+    <div class="step-body flash-layout" x-show="step === 6">
+      <div class="flash-top">
+
+        <!-- Artifact selector -->
+        <div class="card" style="display:flex;flex-direction:column;gap:10px">
+          <div class="card-title" style="margin-bottom:0">
+            Образ для записи
+            <button class="btn-sm" style="float:right;margin-top:-2px" @click="loadArtifacts()">↺</button>
+          </div>
+          <div class="artifact-list" x-show="artifacts.length > 0">
+            <template x-for="a in artifacts" :key="a.path">
+              <div class="artifact-row" :class="{ selected: selectedArtifact === a.path }"
+                @click="selectedArtifact = a.path">
+                <span class="artifact-name" x-text="a.name"></span>
+                <span class="artifact-size" x-text="a.size_human"></span>
+              </div>
+            </template>
+          </div>
+          <div class="empty-note" x-show="artifacts.length === 0">
+            Нет образов в artifacts dir.<br>Сначала запусти сборку (шаг 5).
+          </div>
+        </div>
+
+        <!-- Device selector -->
+        <div class="card" style="display:flex;flex-direction:column;gap:10px">
+          <div class="card-title" style="margin-bottom:0">
+            SD-карта / USB-флешка
+            <button class="btn-sm" style="float:right;margin-top:-2px" @click="loadDevices()">↺</button>
+          </div>
+          <div class="device-list" x-show="devices.length > 0">
+            <template x-for="d in devices" :key="d.path">
+              <div class="device-card"
+                :class="{ selected: selectedDevice === d.path, disabled: !!d.mountpoint }"
+                @click="d.mountpoint ? null : (selectedDevice = d.path)">
+                <span class="device-icon" x-text="d.tran === 'usb' ? '💾' : '🖴'"></span>
+                <div class="device-info">
+                  <div class="device-name" x-text="d.path"></div>
+                  <div class="device-meta" x-text="[d.vendor, d.model].filter(Boolean).join(' ') || 'Unknown'"></div>
+                  <div class="device-meta" x-show="d.mountpoint" style="color:var(--warn)">
+                    Смонтирован — размонтируй перед записью
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                  <span class="device-size" x-text="d.size_human"></span>
+                  <span class="device-badge" :class="d.tran === 'usb' ? 'usb' : ''" x-show="d.tran" x-text="d.tran.toUpperCase()"></span>
+                  <span class="device-badge mounted" x-show="d.mountpoint">mounted</span>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="empty-note" x-show="devices.length === 0">
+            Нет дисков. Убедись что USB-кардридер подключён к rpi4-codex.
+          </div>
+        </div>
+      </div>
+
+      <!-- Flash action bar -->
+      <div class="flash-action" x-show="selectedDevice && selectedArtifact">
+        <div class="flash-warn">
+          <strong>⚠ Внимание:</strong> всё содержимое
+          <strong x-text="selectedDevice"></strong> будет уничтожено.
+          Записывается <span x-text="selectedArtifactName"></span>.
+        </div>
+        <button class="btn-flash" @click="startFlash()"
+          :disabled="flashing || !selectedDevice || !selectedArtifact">
+          <span x-show="!flashing">⚡ Записать</span>
+          <span x-show="flashing">Запись…</span>
+        </button>
+      </div>
+
+      <!-- Flash progress log -->
+      <div class="build-log-wrap" style="flex:1;min-height:120px">
+        <div class="build-log" id="flash-log">
+          <div class="empty-note" x-show="flashLog.length === 0 && !flashing" style="padding:16px">
+            Выбери образ и устройство выше, затем нажми «Записать».
+          </div>
+          <template x-for="(ev, i) in flashLog" :key="i">
+            <div class="log-line" :class="ev.level" x-text="ev.data"></div>
+          </template>
+          <span class="log-cursor" x-show="flashing">▌</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer nav -->
     <div class="step-footer">
       <button class="btn-secondary" @click="step--" x-show="step > 1">← Назад</button>
-      <button class="btn-primary"   @click="step++" x-show="step < 5">Далее →</button>
+      <button class="btn-primary"   @click="step++; if(step===6) onEnterFlash()" x-show="step < 6">Далее →</button>
     </div>
   </div>
 </div>
@@ -363,6 +452,83 @@
     <div class="btn-row" style="justify-content:flex-end">
       <button class="btn-secondary" @click="showModal = false">Отмена</button>
       <button class="btn-primary" @click="addCustom()">Добавить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings modal ───────────────────────────────────────── -->
+<div class="modal-overlay" x-show="showSettings" x-cloak @click.self="showSettings = false">
+  <div class="modal modal-settings" @click.stop>
+    <h3>Настройки хранилищ</h3>
+
+    <div class="settings-tabs">
+      <button class="settings-tab" :class="{ active: settingsTab === 'server' }" @click="settingsTab = 'server'">Сервер сборки</button>
+      <button class="settings-tab" :class="{ active: settingsTab === 'build'  }" @click="settingsTab = 'build'">Временные файлы</button>
+      <button class="settings-tab" :class="{ active: settingsTab === 'artifacts' }" @click="settingsTab = 'artifacts'">Готовые образы</button>
+    </div>
+
+    <!-- Tab: Server -->
+    <div x-show="settingsTab === 'server'" class="form-grid">
+      <div class="field field-full">
+        <label>SSH-хост build-сервера</label>
+        <input x-model="settings.build.server" placeholder="rpi4-codex">
+      </div>
+      <div class="field field-full">
+        <label>Базовая директория на сервере</label>
+        <input x-model="settings.build.base_dir" placeholder="/mnt/build-ssd/mobileos-build">
+      </div>
+      <div class="field field-full">
+        <label>Директория mobileos (репо)</label>
+        <input x-model="settings.build.mobileos_dir" placeholder="/mnt/build-ssd/mobileos-build/mobileos">
+      </div>
+      <div class="field field-full">
+        <label>Директория Buildroot</label>
+        <input x-model="settings.build.buildroot_dir" placeholder="/mnt/build-ssd/mobileos-build/buildroot">
+      </div>
+    </div>
+
+    <!-- Tab: Build temp -->
+    <div x-show="settingsTab === 'build'" class="form-grid">
+      <p class="card-note" style="grid-column:1/-1">
+        Промежуточные файлы сборки (объектники, toolchain, packages) — занимают 10–30 ГБ.
+        Хранятся на build-сервере в поддиректориях базовой директории.
+      </p>
+      <div class="field field-full">
+        <label>Output dir для qemu-aarch64</label>
+        <input x-model="settings.build.output['qemu-aarch64']" placeholder="output-qemu">
+      </div>
+      <div class="field field-full">
+        <label>Output dir для zero2w-phone</label>
+        <input x-model="settings.build.output['zero2w-phone']" placeholder="output-zero2w">
+      </div>
+    </div>
+
+    <!-- Tab: Artifacts -->
+    <div x-show="settingsTab === 'artifacts'" class="form-grid">
+      <p class="card-note" style="grid-column:1/-1">
+        Готовые образы (.img, .qcow2) копируются сюда после каждой сборки.
+        Шаг 6 (Flash) ищет файлы в этой директории.
+      </p>
+      <div class="field field-full">
+        <label>Директория артефактов (на build-сервере)</label>
+        <input x-model="settings.artifacts.dir" placeholder="/mnt/build-ssd/mobileos-build/artifacts">
+      </div>
+      <div class="field field-full">
+        <label>Сетевое хранилище NFS (опционально)</label>
+        <input x-model="settings.artifacts.nfs_mount" placeholder="/mnt/nas/mobileos">
+      </div>
+      <div class="field field-full">
+        <label>SMB / Samba-шара (опционально)</label>
+        <input x-model="settings.artifacts.smb_share" placeholder="//nas/mobileos">
+      </div>
+      <p class="card-note" style="grid-column:1/-1">
+        NFS / SMB — только для документирования, монтирование выполняется вручную на сервере.
+      </p>
+    </div>
+
+    <div class="btn-row" style="justify-content:flex-end;margin-top:4px">
+      <button class="btn-secondary" @click="showSettings = false">Отмена</button>
+      <button class="btn-primary" @click="saveSettings()">Сохранить</button>
     </div>
   </div>
 </div>
@@ -394,13 +560,26 @@ function mkProfile() {
     target: 'qemu-aarch64',
     branding: { hostname:'mobileos', version:'0.1.0', root_password:'', ssh_authorized_key:'', console:'ttyAMA0' },
     network: {
-      eth0:  { mode:'dhcp', address:'', gateway:'', dns:'' },
-      wifi:  { country:'RU', ssid:'', psk:'' },
+      eth0: { mode:'dhcp', address:'', gateway:'', dns:'' },
+      wifi: { country:'RU', ssid:'', psk:'' },
     },
     image:    { size_mb:512, boot_mb:64 },
     packages: { enabled:[], custom:[] },
     telegram: { enabled:false, phone:'', api_id:'', api_hash:'' },
     sim:      { enabled:false, port:'/dev/ttyS0', baud:9600 },
+  }
+}
+
+function mkSettings() {
+  return {
+    build: {
+      server:       'rpi4-codex',
+      base_dir:     '/mnt/build-ssd/mobileos-build',
+      mobileos_dir: '/mnt/build-ssd/mobileos-build/mobileos',
+      buildroot_dir:'/mnt/build-ssd/mobileos-build/buildroot',
+      output: { 'qemu-aarch64': 'output-qemu', 'zero2w-phone': 'output-zero2w' },
+    },
+    artifacts: { dir:'/mnt/build-ssd/mobileos-build/artifacts', nfs_mount:'', smb_share:'' },
   }
 }
 
@@ -418,19 +597,36 @@ function app() {
     pkgCategory: null,
     showModal: false,
     customInput: '',
+
+    // build
     buildLog: [],
     building: false,
     buildStage: '',
 
+    // flash
+    devices: [],
+    artifacts: [],
+    selectedDevice: '',
+    selectedArtifact: '',
+    flashLog: [],
+    flashing: false,
+
+    // settings
+    showSettings: false,
+    settingsTab: 'server',
+    settings: mkSettings(),
+
     async init() {
-      const [t, p, pr] = await Promise.all([
+      const [t, p, pr, s] = await Promise.all([
         fetch('/api/targets').then(r => r.json()),
         fetch('/api/packages').then(r => r.json()),
         fetch('/api/profiles').then(r => r.json()),
+        fetch('/api/settings').then(r => r.json()),
       ])
       this.targets   = t
       this.catalogue = p
       this.profiles  = pr
+      this.settings  = s
     },
 
     // ── computed ───────────────────────────────────────────────
@@ -456,7 +652,12 @@ function app() {
         .reduce((a, p) => a + (p.size_kb || 0), 0)
     },
 
-    // ── methods ────────────────────────────────────────────────
+    get selectedArtifactName() {
+      const a = this.artifacts.find(x => x.path === this.selectedArtifact)
+      return a ? a.name : ''
+    },
+
+    // ── target / preset ────────────────────────────────────────
     abbr(key) { return ABBR[key] || key.toUpperCase() },
 
     selectTarget(key) {
@@ -466,8 +667,7 @@ function app() {
       this.selectedPreset = p.id
       this.profile.image.size_mb = p.size_mb
       this.profile.image.boot_mb = p.boot_mb
-      if (isQemu) this.profile.branding.console = 'ttyAMA0'
-      else        this.profile.branding.console = 'serial0'
+      this.profile.branding.console = isQemu ? 'ttyAMA0' : 'serial0'
     },
 
     applyPreset(p) {
@@ -482,15 +682,16 @@ function app() {
       const t = this.targets[this.profile.target]
       if (!t) return []
       return [
-        ['arch',    t.arch],
-        ['kernel',  t.kernel_defconfig],
-        ['image',   t.image_name],
-        ['qemu',    t.qemu_supported ? 'yes' : 'no'],
-        ['wifi',    t.wifi_capable   ? 'yes' : 'no'],
+        ['arch',     t.arch],
+        ['kernel',   t.kernel_defconfig],
+        ['image',    t.image_name],
+        ['qemu',     t.qemu_supported ? 'yes' : 'no'],
+        ['wifi',     t.wifi_capable   ? 'yes' : 'no'],
         ['ssh port', String(t.ssh_port || 22)],
       ]
     },
 
+    // ── packages ───────────────────────────────────────────────
     toggle(pkg) {
       if (pkg.required) return
       const next = new Set(this.enabled)
@@ -519,13 +720,13 @@ function app() {
       return kb >= 1024 ? `${(kb/1024).toFixed(1)} MB` : `${kb} KB`
     },
 
+    // ── profile CRUD ───────────────────────────────────────────
     async saveProfile() {
       if (!this.profileName) return
-      const body = { ...this.profile, name: this.profileName }
       await fetch(`/api/profiles/${this.profileName}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...this.profile, name: this.profileName }),
       })
       this.profiles = await fetch('/api/profiles').then(r => r.json())
     },
@@ -550,6 +751,22 @@ function app() {
       return p ? p.id : 'custom'
     },
 
+    // ── settings ───────────────────────────────────────────────
+    openSettings() {
+      this.settingsTab  = 'server'
+      this.showSettings = true
+    },
+
+    async saveSettings() {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.settings),
+      })
+      this.showSettings = false
+    },
+
+    // ── build ──────────────────────────────────────────────────
     async startBuild() {
       if (!this.profileName) return
       await this.saveProfile()
@@ -559,7 +776,7 @@ function app() {
 
       const res = await fetch(`/api/profiles/${this.profileName}/build`, { method: 'POST' })
       if (!res.ok) {
-        this.buildLog.push({ event:'error', data: await res.text() })
+        this.buildLog.push({ level:'error', data: await res.text() })
         this.building = false
         return
       }
@@ -575,15 +792,51 @@ function app() {
           if (el) el.scrollTop = el.scrollHeight
         })
       }
-      es.addEventListener('done', () => {
-        es.close()
-        this.building   = false
-        this.buildStage = 'Готово ✓'
+      es.addEventListener('done', () => { es.close(); this.building = false; this.buildStage = 'Готово ✓' })
+      es.onerror = () => { es.close(); this.building = false }
+    },
+
+    // ── flash ──────────────────────────────────────────────────
+    async onEnterFlash() {
+      await Promise.all([this.loadDevices(), this.loadArtifacts()])
+    },
+
+    async loadDevices() {
+      this.devices = await fetch('/api/devices').then(r => r.json()).catch(() => [])
+    },
+
+    async loadArtifacts() {
+      this.artifacts = await fetch('/api/artifacts').then(r => r.json()).catch(() => [])
+    },
+
+    async startFlash() {
+      if (!this.selectedDevice || !this.selectedArtifact) return
+      this.flashLog = []
+      this.flashing = true
+
+      const res = await fetch('/api/flash/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: this.selectedDevice, image: this.selectedArtifact }),
       })
-      es.onerror = () => {
-        es.close()
-        this.building = false
+      if (!res.ok) {
+        this.flashLog.push({ level:'error', data: await res.text() })
+        this.flashing = false
+        return
       }
+      const { flash_id } = await res.json()
+      const es = new EventSource(`/api/flash/${flash_id}/events`)
+
+      es.onmessage = e => {
+        const ev = JSON.parse(e.data)
+        this.flashLog.push(ev)
+        this.$nextTick(() => {
+          const el = document.getElementById('flash-log')
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      }
+      es.addEventListener('done', () => { es.close(); this.flashing = false })
+      es.onerror = () => { es.close(); this.flashing = false }
     },
   }
 }

@@ -262,6 +262,51 @@ input[type=checkbox] { width: auto; accent-color: var(--info); }
 .modal { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; width: 420px; display: flex; flex-direction: column; gap: 14px; }
 .modal h3 { font-size: 15px; font-weight: 700; }
 
+/* Settings modal — wider, with tabs */
+.modal-settings { width: 560px; }
+.settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: -4px -24px 16px; padding: 0 24px; }
+.settings-tab { padding: 8px 16px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--fg-3); font-size: 13px; cursor: pointer; margin-bottom: -1px; }
+.settings-tab.active { border-bottom-color: var(--info); color: var(--fg); font-weight: 600; }
+.settings-tab:hover { color: var(--fg); }
+
+/* Settings gear button in sidebar */
+.sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--border); }
+.btn-settings { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--fg-3); font-size: 12px; cursor: pointer; }
+.btn-settings:hover { color: var(--fg); background: var(--bg-2); }
+
+/* Flash layout */
+.flash-layout { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+.flash-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.device-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+.device-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: border-color .15s; }
+.device-card:hover { border-color: var(--fg-3); }
+.device-card.selected { border-color: var(--err); background: color-mix(in srgb, var(--err) 6%, transparent); }
+.device-card.disabled { opacity: .4; cursor: not-allowed; }
+.device-icon { font-size: 20px; flex-shrink: 0; }
+.device-info { flex: 1; min-width: 0; }
+.device-name { font-family: monospace; font-size: 13px; font-weight: 700; }
+.device-meta { font-size: 11px; color: var(--fg-3); margin-top: 2px; }
+.device-size { font-size: 12px; color: var(--fg-2); font-family: monospace; white-space: nowrap; }
+.device-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.device-badge.usb { background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }
+.device-badge.mounted { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+.artifact-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.artifact-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: border-color .15s; }
+.artifact-row:hover { border-color: var(--fg-3); }
+.artifact-row.selected { border-color: var(--info); background: color-mix(in srgb, var(--info) 6%, transparent); }
+.artifact-name { flex: 1; font-size: 12px; font-family: monospace; color: var(--fg-2); }
+.artifact-row.selected .artifact-name { color: var(--fg); }
+.artifact-size { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+
+.flash-action { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: color-mix(in srgb, var(--err) 5%, transparent); border: 1px solid color-mix(in srgb, var(--err) 25%, transparent); border-radius: var(--radius); }
+.flash-warn { flex: 1; font-size: 12px; color: var(--fg-3); }
+.flash-warn strong { color: var(--warn); }
+.btn-flash { padding: 10px 28px; background: var(--err); color: #fff; border: none; font-weight: 700; font-size: 14px; border-radius: var(--radius-sm); white-space: nowrap; }
+.btn-flash:hover { opacity: .85; }
+.btn-flash:disabled { opacity: .4; cursor: default; }
+.empty-note { padding: 24px; text-align: center; color: var(--fg-3); font-size: 12px; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,15 @@
+# mobileos Configurator — default settings
+build:
+  server: rpi4-codex
+  base_dir: /mnt/build-ssd/mobileos-build
+  mobileos_dir: /mnt/build-ssd/mobileos-build/mobileos
+  buildroot_dir: /mnt/build-ssd/mobileos-build/buildroot
+  output:
+    qemu-aarch64: output-qemu
+    zero2w-phone: output-zero2w
+
+artifacts:
+  dir: /mnt/build-ssd/mobileos-build/artifacts
+  # Optional: copy artifacts to a network share after build
+  # nfs_mount: /mnt/nas/mobileos
+  # smb_share: //nas/mobileos
