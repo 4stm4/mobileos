@@ -1,0 +1,45 @@
+#!/bin/sh
+# netd — network daemon (Wi-Fi + WireGuard + DNS)
+
+DAEMON=/usr/bin/netd
+PIDFILE=/var/run/netd.pid
+LOGFILE=/var/log/netd.log
+
+case "$1" in
+    start)
+        echo -n "Starting netd: "
+        if [ ! -x "$DAEMON" ]; then
+            echo "not installed"
+            exit 0
+        fi
+        install -d /run/netd
+        install -d -m 0750 /data/wireguard
+        install -d /data/netd
+        # Ensure /etc/resolv.conf symlink exists (netd will rewrite target)
+        [ -L /etc/resolv.conf ] || ln -sf /run/netd/resolv.conf /etc/resolv.conf
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping netd: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        killall -q wpa_supplicant udhcpc 2>/dev/null
+        wg-quick down wg0 2>/dev/null || true
+        rm -f "$PIDFILE" /run/netd.sock
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
