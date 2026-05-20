@@ -1,0 +1,4 @@
+# Host tooling (not part of the embedded OS tree)
+src/
+.DS_Store
+output/
