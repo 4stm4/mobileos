@@ -1,0 +1,44 @@
+#!/bin/sh
+# Start mobile-shell (LVGL/DRM UI)
+# Starts last — all daemons (commd, simd, netd, powerd) must be up first.
+
+DAEMON=/usr/bin/mobile-shell
+PIDFILE=/var/run/mobile-shell.pid
+LOGFILE=/var/log/mobile-shell.log
+
+case "$1" in
+    start)
+        echo -n "Starting mobile-shell: "
+        if [ ! -x "$DAEMON" ]; then
+            echo "not installed"
+            exit 0
+        fi
+        # Wait for DRM device to be ready
+        for i in $(seq 1 10); do
+            [ -e /dev/dri/card0 ] && break
+            sleep 0.2
+        done
+        start-stop-daemon --start --background \
+            --make-pidfile --pidfile "$PIDFILE" \
+            --exec "$DAEMON" -- >> "$LOGFILE" 2>&1
+        echo "OK"
+        ;;
+    stop)
+        echo -n "Stopping mobile-shell: "
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry 5
+        rm -f "$PIDFILE"
+        echo "OK"
+        ;;
+    restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile "$PIDFILE" \
+            && echo "running" || echo "stopped"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,5 @@
+config BR2_PACKAGE_LVGL
+	bool "LVGL — Light and Versatile Graphics Library"
+	help
+	  LVGL 9.2.x embedded graphics library.
+	  Built as a static library; consumed by mobile-shell.
