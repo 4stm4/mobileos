@@ -1,0 +1,31 @@
+# mobileos daemon log rotation
+# Runs via cron daily (or manually: logrotate /etc/logrotate.d/mobileos)
+
+/var/log/commd.log
+/var/log/netd.log
+/var/log/powerd.log
+/var/log/localbe.log
+/var/log/hardwared.log
+/var/log/simd.log
+/var/log/telegramd.log
+/var/log/mobileos-update.log {
+    daily
+    rotate 5
+    compress
+    missingok
+    notifempty
+    size 2M
+    copytruncate
+}
+
+/var/log/messages {
+    daily
+    rotate 3
+    compress
+    missingok
+    notifempty
+    size 4M
+    postrotate
+        kill -HUP $(cat /var/run/syslogd.pid 2>/dev/null) 2>/dev/null || true
+    endscript
+}
