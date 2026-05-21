@@ -52,6 +52,41 @@ jobs:
             cd -
           done
 
+  # ── Rust cross-check (aarch64-unknown-linux-musl) ────────────────────────
+  cargo-check:
+    name: Cargo check (aarch64-musl)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + musl target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-aarch64-musl-${{ hashFiles('packages/*/src/Cargo.lock') }}
+          restore-keys: cargo-aarch64-musl-
+
+      - name: cargo check — all packages
+        run: |
+          fail=0
+          for src_dir in packages/*/src; do
+            [ -f "$src_dir/Cargo.toml" ] || continue
+            pkg=$(echo "$src_dir" | cut -d/ -f2)
+            echo "==> checking $pkg"
+            (cd "$src_dir" && cargo check --target aarch64-unknown-linux-musl 2>&1) || {
+              echo "FAIL: $pkg"
+              fail=1
+            }
+          done
+          exit $fail
+
   # ── Buildroot config check (no full build — too slow for CI) ─────────────
   config-check:
     name: Defconfig parse check
