@@ -1,5 +1,6 @@
 import asyncio
 import json
+import socket
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -25,11 +26,41 @@ def _cfg(settings: dict) -> dict:
     return settings if settings else _DEFAULT
 
 
-def _ssh(host: str, cmd: str) -> subprocess.CompletedProcess:
+def _is_local(host: str) -> bool:
+    """True если host — это текущая машина (SSH-алиас или localhost)."""
+    try:
+        host_ip = socket.gethostbyname(host)
+        local_ips = {"127.0.0.1", "::1"} | set(
+            socket.gethostbyname_ex(socket.gethostname())[2]
+        )
+        return host_ip in local_ips
+    except socket.gaierror:
+        # Не резолвится — скорее всего SSH-алиас на текущую машину
+        return True
+
+
+def _run(host: str, cmd: str) -> subprocess.CompletedProcess:
+    if _is_local(host):
+        return subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
     return subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
          host, cmd],
-        capture_output=True, text=True
+        capture_output=True, text=True,
+    )
+
+
+async def _async_proc(host: str, cmd: str):
+    if _is_local(host):
+        return await asyncio.create_subprocess_exec(
+            "bash", "-c", cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    return await asyncio.create_subprocess_exec(
+        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+        host, cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
 
 
@@ -53,7 +84,6 @@ def start_build(profile: dict) -> str:
     log_path    = f"{base_dir}/build-{build_id}.log"
     session     = f"mb-{build_id}"
 
-    # After build: copy images to artifacts dir
     cp_imgs = (
         f"mkdir -p {artifacts} && "
         f"cp {full_out}/images/*.img {artifacts}/ 2>/dev/null; "
@@ -61,21 +91,20 @@ def start_build(profile: dict) -> str:
         f"cp {full_out}/images/Image {artifacts}/ 2>/dev/null || true"
     )
 
-    tmux_cmd = (
-        f"tmux new-session -d -s {session} "
-        f"'set -e; "
-        f"echo \"=== git pull ===\" >> {log_path}; "
+    inner = (
+        f"set -e; "
+        f"echo '=== git pull ===' >> {log_path}; "
         f"cd {mobileos} && git pull origin main >> {log_path} 2>&1; "
-        f"echo \"=== defconfig ===\" >> {log_path}; "
+        f"echo '=== defconfig ===' >> {log_path}; "
         f"make -C {buildroot} BR2_EXTERNAL={mobileos} O={full_out} "
         f"  BR2_DEFCONFIG={full_def} defconfig >> {log_path} 2>&1; "
-        f"echo \"=== build ===\" >> {log_path}; "
+        f"echo '=== build ===' >> {log_path}; "
         f"make -C {buildroot} BR2_EXTERNAL={mobileos} O={full_out} >> {log_path} 2>&1; "
-        f"echo \"=== copy artifacts ===\" >> {log_path}; "
+        f"echo '=== copy artifacts ===' >> {log_path}; "
         f"{cp_imgs} >> {log_path} 2>&1; "
-        f"echo BUILD_DONE >> {log_path}'"
+        f"echo BUILD_DONE >> {log_path}"
     )
-    _ssh(host, tmux_cmd)
+    _run(host, f"tmux new-session -d -s {session} '{inner}'")
 
     builds[build_id] = {
         "id":         build_id,
@@ -99,18 +128,14 @@ async def stream_events(build_id: str):
     host     = build["host"]
     log_path = build["log_path"]
 
+    # Ждём появления лог-файла
     for _ in range(30):
-        r = _ssh(host, f"test -f {log_path} && echo exists")
+        r = _run(host, f"test -f {log_path} && echo exists")
         if "exists" in r.stdout:
             break
         await asyncio.sleep(1)
 
-    proc = await asyncio.create_subprocess_exec(
-        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
-        host, f"tail -f {log_path}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    proc = await _async_proc(host, f"tail -f {log_path}")
 
     try:
         while True:

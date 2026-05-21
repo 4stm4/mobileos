@@ -1,5 +1,6 @@
 import asyncio
 import json
+import socket
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -7,17 +8,45 @@ from datetime import datetime, timezone
 flashes: dict = {}
 
 
-def _ssh(host: str, cmd: str) -> subprocess.CompletedProcess:
+def _is_local(host: str) -> bool:
+    try:
+        host_ip = socket.gethostbyname(host)
+        local_ips = {"127.0.0.1", "::1"} | set(
+            socket.gethostbyname_ex(socket.gethostname())[2]
+        )
+        return host_ip in local_ips
+    except socket.gaierror:
+        return True
+
+
+def _run(host: str, cmd: str) -> subprocess.CompletedProcess:
+    if _is_local(host):
+        return subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
     return subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
          host, cmd],
-        capture_output=True, text=True
+        capture_output=True, text=True,
+    )
+
+
+async def _async_proc(host: str, cmd: str):
+    if _is_local(host):
+        return await asyncio.create_subprocess_exec(
+            "bash", "-c", cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    return await asyncio.create_subprocess_exec(
+        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+        host, cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
 
 
 def list_devices(settings: dict) -> list:
     host = settings["build"]["server"]
-    r = _ssh(host, "lsblk -J -b -o NAME,SIZE,TYPE,TRAN,VENDOR,MODEL,MOUNTPOINT,RM 2>/dev/null")
+    r = _run(host, "lsblk -J -b -o NAME,SIZE,TYPE,TRAN,VENDOR,MODEL,MOUNTPOINT,RM 2>/dev/null")
     if r.returncode != 0 or not r.stdout.strip():
         return []
     try:
@@ -46,7 +75,7 @@ def list_devices(settings: dict) -> list:
 def list_artifacts(settings: dict) -> list:
     host    = settings["build"]["server"]
     art_dir = settings["artifacts"]["dir"]
-    r = _ssh(host, f"ls -1 {art_dir}/*.img {art_dir}/*.qcow2 2>/dev/null || true")
+    r = _run(host, f"ls -1 {art_dir}/*.img {art_dir}/*.qcow2 2>/dev/null || true")
     if not r.stdout.strip():
         return []
     result = []
@@ -54,8 +83,7 @@ def list_artifacts(settings: dict) -> list:
         path = path.strip()
         if not path:
             continue
-        # get size
-        sr = _ssh(host, f"stat -c '%s' {path} 2>/dev/null || echo 0")
+        sr = _run(host, f"stat -c '%s' {path} 2>/dev/null || echo 0")
         try:
             sz = int(sr.stdout.strip())
         except ValueError:
@@ -75,16 +103,13 @@ def start_flash(device: str, image: str, settings: dict) -> str:
     log_path = f"/tmp/flash-{flash_id}.log"
     session  = f"flash-{flash_id}"
 
-    # dd status=progress writes \r-separated lines to stderr;
-    # tr '\r' '\n' converts them to proper newlines in the log
     cmd = (
         f"dd if={image} of={device} bs=4M conv=fsync status=progress 2>&1 "
         f"| stdbuf -oL tr '\\r' '\\n' >> {log_path}"
         f" && sync && echo FLASH_DONE >> {log_path}"
         f" || echo FLASH_ERROR >> {log_path}"
     )
-    tmux_cmd = f"tmux new-session -d -s {session} '{cmd}'"
-    _ssh(host, tmux_cmd)
+    _run(host, f"tmux new-session -d -s {session} '{cmd}'")
 
     flashes[flash_id] = {
         "id":         flash_id,
@@ -109,21 +134,12 @@ async def stream_flash_events(flash_id: str):
     log_path = flash["log_path"]
 
     for _ in range(15):
-        r = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", host,
-             f"test -f {log_path} && echo exists"],
-            capture_output=True, text=True
-        )
+        r = _run(host, f"test -f {log_path} && echo exists")
         if "exists" in r.stdout:
             break
         await asyncio.sleep(1)
 
-    proc = await asyncio.create_subprocess_exec(
-        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
-        host, f"tail -f {log_path}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    proc = await _async_proc(host, f"tail -f {log_path}")
 
     try:
         while True:
