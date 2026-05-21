@@ -9,7 +9,8 @@
 </head>
 <body>
 
-<div x-data="app()" x-init="init()" x-cloak class="layout">
+<div x-data="app()" x-init="init()" x-cloak>
+<div class="layout">
 
   <!-- ── Sidebar ──────────────────────────────────────────────── -->
   <aside class="sidebar">
@@ -441,7 +442,7 @@
       <button class="btn-primary"   @click="step++; if(step===6) onEnterFlash()" x-show="step < 6">Далее →</button>
     </div>
   </div>
-</div>
+</div><!-- end .layout -->
 
 <!-- ── Custom package modal ──────────────────────────────────── -->
 <div class="modal-overlay" x-show="showModal" x-cloak @click.self="showModal = false">
@@ -841,5 +842,6 @@ function app() {
   }
 }
 </script>
+</div><!-- end x-data -->
 </body>
 </html>
