@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# S35watchdog — hardware watchdog daemon
+# Requires: /dev/watchdog (bcm2835-wdt kernel module)
+# Config:   /etc/watchdog.conf
+#
+
+DAEMON="watchdogd"
+PIDFILE="/var/run/watchdog.pid"
+
+start() {
+    # Load BCM2835 watchdog driver if not already loaded
+    if [ -c /dev/watchdog ]; then
+        :
+    else
+        modprobe bcm2835_wdt 2>/dev/null || true
+        sleep 0.2
+    fi
+
+    if [ ! -c /dev/watchdog ]; then
+        echo "WARNING: /dev/watchdog not found, skipping watchdog"
+        return 0
+    fi
+
+    echo -n "Starting $DAEMON: "
+    start-stop-daemon --start --quiet \
+        --pidfile "$PIDFILE" --make-pidfile \
+        --background \
+        --exec /usr/sbin/watchdogd -- -c /etc/watchdog.conf
+    echo "OK"
+}
+
+stop() {
+    echo -n "Stopping $DAEMON: "
+    start-stop-daemon --stop --quiet --pidfile "$PIDFILE"
+    echo "OK"
+}
+
+case "$1" in
+    start) start ;;
+    stop)  stop  ;;
+    restart) stop; sleep 1; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
