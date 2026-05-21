@@ -27,3 +27,18 @@ zero2w-phone:
   ssh_port: 22
   defconfig: zero2w-phone_defconfig
   output_dir: output-zero2w
+
+zero2w-phone-prod:
+  description: "RPi Zero 2 W — PRODUCTION (watchdog, locked root)"
+  status: wip
+  arch: aarch64
+  kernel_defconfig: bcm2711 + rpi-6.6.y
+  image_name: sdcard.img
+  qemu_supported: false
+  wifi_capable: true
+  build_kernel_modules: true
+  install_boot_files: true
+  boot_cmdline: "console=serial0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 ro rootwait quiet"
+  ssh_port: 22
+  defconfig: zero2w-phone-prod_defconfig
+  output_dir: output-zero2w-prod
