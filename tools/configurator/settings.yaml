@@ -13,3 +13,10 @@ artifacts:
   # Optional: copy artifacts to a network share after build
   # nfs_mount: /mnt/nas/mobileos
   # smb_share: //nas/mobileos
+
+# Web UI authentication (HTTP Basic Auth)
+# Set disabled: true to run without password (only for local/trusted networks)
+auth:
+  username: admin
+  password: mobileos
+  # disabled: true

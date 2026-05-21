@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from auth import BasicAuthMiddleware
 from build_runner import builds, start_build, stream_events
 from flash_runner import (flashes, list_artifacts, list_devices,
                           start_flash, stream_flash_events)
@@ -18,6 +19,29 @@ SETTINGS_FILE = BASE / "settings.yaml"
 app = FastAPI(title="mobileos Configurator")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
+
+
+def _apply_auth(application: FastAPI) -> None:
+    """Add BasicAuthMiddleware if credentials are configured in settings.yaml."""
+    try:
+        with open(SETTINGS_FILE) as f:
+            cfg = yaml.safe_load(f) or {}
+        auth = cfg.get("auth", {})
+        if auth.get("disabled"):
+            return
+        username = auth.get("username", "").strip()
+        password = auth.get("password", "").strip()
+        if username and password:
+            application.add_middleware(BasicAuthMiddleware,
+                                       username=username, password=password)
+            print(f"[auth] Basic Auth enabled for user '{username}'")
+        else:
+            print("[auth] WARNING: no auth credentials set — configurator is unprotected!")
+    except FileNotFoundError:
+        pass  # settings not yet created
+
+
+_apply_auth(app)
 
 with open(BASE / "targets.yaml") as f:
     TARGETS = yaml.safe_load(f)
