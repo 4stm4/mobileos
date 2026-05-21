@@ -2,6 +2,7 @@ config BR2_PACKAGE_NETD
 	bool "netd — network daemon"
 	depends on BR2_PACKAGE_HOST_RUSTC
 	depends on BR2_TOOLCHAIN_HAS_THREADS
+	select BR2_PACKAGE_WIREGUARD_TOOLS
 	help
 	  Network management daemon.
 	  WireGuard as primary VPN; AmneziaWG as optional add-on.
