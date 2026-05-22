@@ -52,6 +52,26 @@ jobs:
             cd -
           done
 
+  # ── Configurator security & API tests (pytest) ──────────────────────────
+  configurator-tests:
+    name: Configurator (pytest)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -q fastapi uvicorn jinja2 pyyaml python-multipart \
+                        pytest pytest-asyncio httpx
+
+      - name: Run pytest
+        working-directory: tools/configurator
+        run: pytest tests/ -v
+
   # ── Rust cross-check (aarch64-unknown-linux-musl) ────────────────────────
   cargo-check:
     name: Cargo check (aarch64-musl)

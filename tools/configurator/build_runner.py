@@ -1,9 +1,12 @@
 import asyncio
 import json
+import shlex
 import socket
 import subprocess
 import uuid
 from datetime import datetime, timezone
+
+from safety import (UnsafeInputError, safe_host, safe_name, safe_path)
 
 builds: dict = {}
 
@@ -27,84 +30,97 @@ def _cfg(settings: dict) -> dict:
 
 
 def _is_local(host: str) -> bool:
-    """True если host — это текущая машина (SSH-алиас или localhost)."""
+    """True iff host resolves to this machine. NEVER guess on DNS failure — return False."""
     try:
         host_ip = socket.gethostbyname(host)
+    except socket.gaierror:
+        return False
+    try:
         local_ips = {"127.0.0.1", "::1"} | set(
             socket.gethostbyname_ex(socket.gethostname())[2]
         )
-        return host_ip in local_ips
     except socket.gaierror:
-        # Не резолвится — скорее всего SSH-алиас на текущую машину
-        return True
+        local_ips = {"127.0.0.1", "::1"}
+    return host_ip in local_ips
 
 
-def _run(host: str, cmd: str) -> subprocess.CompletedProcess:
+def _run(host: str, argv: list[str]) -> subprocess.CompletedProcess:
     if _is_local(host):
-        return subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
+        return subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    remote = " ".join(shlex.quote(a) for a in argv)
     return subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-         host, cmd],
-        capture_output=True, text=True,
+         host, remote],
+        capture_output=True, text=True, timeout=60,
     )
 
 
-async def _async_proc(host: str, cmd: str):
+async def _async_proc(host: str, argv: list[str]):
     if _is_local(host):
         return await asyncio.create_subprocess_exec(
-            "bash", "-c", cmd,
+            *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+    remote = " ".join(shlex.quote(a) for a in argv)
     return await asyncio.create_subprocess_exec(
-        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
-        host, cmd,
+        "ssh", "-tt", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+        host, remote,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
 
 
 def start_build(profile: dict) -> str:
-    build_id = uuid.uuid4().hex[:8]
-    target   = profile.get("target", "qemu-aarch64")
-    cfg      = _cfg(profile.get("_settings", {}))
-    targets  = profile.get("_targets", {})
-    tinfo    = targets.get(target, {})
+    # Validate everything user-controlled before composing the shell command.
+    target  = safe_name(profile.get("target", "qemu-aarch64"), field="target")
+    cfg     = _cfg(profile.get("_settings", {}))
+    targets = profile.get("_targets", {})
+    tinfo   = targets.get(target, {})
 
-    host        = cfg["build"]["server"]
-    base_dir    = cfg["build"]["base_dir"]
-    mobileos    = cfg["build"].get("mobileos_dir",  f"{base_dir}/mobileos")
-    buildroot   = cfg["build"].get("buildroot_dir", f"{base_dir}/buildroot")
-    out_name    = cfg["build"]["output"].get(target, tinfo.get("output_dir", "output"))
-    artifacts   = cfg["artifacts"]["dir"]
+    host       = safe_host(cfg["build"]["server"])
+    base_dir   = safe_path(cfg["build"]["base_dir"], field="build.base_dir")
+    mobileos   = safe_path(cfg["build"].get("mobileos_dir",  f"{base_dir}/mobileos"),
+                           field="build.mobileos_dir")
+    buildroot  = safe_path(cfg["build"].get("buildroot_dir", f"{base_dir}/buildroot"),
+                           field="build.buildroot_dir")
+    out_name   = safe_name(cfg["build"]["output"].get(target,
+                                                       tinfo.get("output_dir", "output")),
+                           field="output_dir")
+    artifacts  = safe_path(cfg["artifacts"]["dir"], field="artifacts.dir")
+    defconfig  = safe_name(tinfo.get("defconfig", "qemu-aarch64_defconfig"),
+                           field="defconfig")
 
-    defconfig   = tinfo.get("defconfig", "qemu-aarch64_defconfig")
-    full_out    = f"{base_dir}/{out_name}"
-    full_def    = f"{mobileos}/products/mobile-os/configs/{defconfig}"
-    log_path    = f"{base_dir}/build-{build_id}.log"
-    session     = f"mb-{build_id}"
+    build_id  = uuid.uuid4().hex[:8]
+    full_out  = f"{base_dir}/{out_name}"
+    full_def  = f"{mobileos}/products/mobile-os/configs/{defconfig}"
+    log_path  = f"{base_dir}/build-{build_id}.log"
+    session   = f"mb-{build_id}"
 
+    # Compose a quoted shell pipeline. All values were validated above; we still
+    # shell-quote on principle so reviewers don't need to re-check.
+    q = shlex.quote
     cp_imgs = (
-        f"mkdir -p {artifacts} && "
-        f"cp {full_out}/images/*.img {artifacts}/ 2>/dev/null; "
-        f"cp {full_out}/images/*.qcow2 {artifacts}/ 2>/dev/null; "
-        f"cp {full_out}/images/Image {artifacts}/ 2>/dev/null || true"
+        f"mkdir -p {q(artifacts)} && "
+        f"cp {q(full_out)}/images/*.img {q(artifacts)}/ 2>/dev/null; "
+        f"cp {q(full_out)}/images/*.qcow2 {q(artifacts)}/ 2>/dev/null; "
+        f"cp {q(full_out)}/images/Image {q(artifacts)}/ 2>/dev/null || true"
     )
-
     inner = (
         f"set -e; "
-        f"echo '=== git pull ===' >> {log_path}; "
-        f"cd {mobileos} && git pull origin main >> {log_path} 2>&1; "
-        f"echo '=== defconfig ===' >> {log_path}; "
-        f"make -C {buildroot} BR2_EXTERNAL={mobileos} O={full_out} "
-        f"  BR2_DEFCONFIG={full_def} defconfig >> {log_path} 2>&1; "
-        f"echo '=== build ===' >> {log_path}; "
-        f"make -C {buildroot} BR2_EXTERNAL={mobileos} O={full_out} >> {log_path} 2>&1; "
-        f"echo '=== copy artifacts ===' >> {log_path}; "
-        f"{cp_imgs} >> {log_path} 2>&1; "
-        f"echo BUILD_DONE >> {log_path}"
+        f"echo '=== git pull ===' >> {q(log_path)}; "
+        f"cd {q(mobileos)} && git pull origin main >> {q(log_path)} 2>&1; "
+        f"echo '=== defconfig ===' >> {q(log_path)}; "
+        f"make -C {q(buildroot)} BR2_EXTERNAL={q(mobileos)} O={q(full_out)} "
+        f"  BR2_DEFCONFIG={q(full_def)} defconfig >> {q(log_path)} 2>&1; "
+        f"echo '=== build ===' >> {q(log_path)}; "
+        f"make -C {q(buildroot)} BR2_EXTERNAL={q(mobileos)} O={q(full_out)} "
+        f"  >> {q(log_path)} 2>&1; "
+        f"echo '=== copy artifacts ===' >> {q(log_path)}; "
+        f"{cp_imgs} >> {q(log_path)} 2>&1; "
+        f"echo BUILD_DONE >> {q(log_path)}"
     )
-    _run(host, f"tmux new-session -d -s {session} '{inner}'")
+    _run(host, ["tmux", "new-session", "-d", "-s", session, inner])
 
     builds[build_id] = {
         "id":         build_id,
@@ -120,6 +136,7 @@ def start_build(profile: dict) -> str:
 
 
 async def stream_events(build_id: str):
+    safe_name(build_id, field="build_id")
     build = builds.get(build_id)
     if not build:
         yield f"data: {json.dumps({'level':'error','data':'Build not found'})}\n\n"
@@ -128,14 +145,23 @@ async def stream_events(build_id: str):
     host     = build["host"]
     log_path = build["log_path"]
 
-    # Ждём появления лог-файла
     for _ in range(30):
-        r = _run(host, f"test -f {log_path} && echo exists")
-        if "exists" in r.stdout:
+        r = _run(host, ["test", "-f", log_path])
+        if r.returncode == 0:
             break
         await asyncio.sleep(1)
 
-    proc = await _async_proc(host, f"tail -f {log_path}")
+    if _is_local(host):
+        proc = await asyncio.create_subprocess_exec(
+            "tail", "-f", log_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+    else:
+        proc = await asyncio.create_subprocess_exec(
+            "ssh", "-tt", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+            host, f"tail -f {shlex.quote(log_path)}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
 
     try:
         while True:
@@ -168,8 +194,12 @@ async def stream_events(build_id: str):
 
     finally:
         try:
-            proc.kill()
-        except Exception:
-            pass
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=2)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
         if builds.get(build_id, {}).get("status") == "running":
             builds[build_id]["status"] = "done"

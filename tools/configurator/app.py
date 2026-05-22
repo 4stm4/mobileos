@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import yaml
@@ -10,15 +11,19 @@ from auth import BasicAuthMiddleware
 from build_runner import builds, start_build, stream_events
 from flash_runner import (flashes, list_artifacts, list_devices,
                           start_flash, stream_flash_events)
+from safety import UnsafeInputError, safe_name, safe_profile_path
 
-BASE         = Path(__file__).parent
+# BASE can be overridden via env (used by the test suite to point at a sandbox)
+BASE         = Path(os.environ.get("MOBILEOS_CONF_DIR", Path(__file__).parent))
 PROFILES_DIR = BASE / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
 SETTINGS_FILE = BASE / "settings.yaml"
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR    = Path(__file__).parent / "static"
 
 app = FastAPI(title="mobileos Configurator")
-app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
-templates = Jinja2Templates(directory=BASE / "templates")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 def _apply_auth(application: FastAPI) -> None:
@@ -43,10 +48,12 @@ def _apply_auth(application: FastAPI) -> None:
 
 _apply_auth(app)
 
-with open(BASE / "targets.yaml") as f:
+# targets/packages catalogues live with the code (not user-configurable)
+_CATALOG_DIR = Path(__file__).parent
+with open(_CATALOG_DIR / "targets.yaml") as f:
     TARGETS = yaml.safe_load(f)
 
-with open(BASE / "packages.yaml") as f:
+with open(_CATALOG_DIR / "packages.yaml") as f:
     PACKAGES = yaml.safe_load(f)
 
 
@@ -84,6 +91,16 @@ async def get_settings():
 @app.put("/api/settings")
 async def save_settings(request: Request):
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "settings must be an object")
+    # NEVER let API clients edit the auth section — that would let an
+    # authenticated user lock out the admin or disable auth entirely.
+    # Preserve whatever auth config is currently on disk.
+    existing = load_settings() or {}
+    if "auth" in existing:
+        body["auth"] = existing["auth"]
+    elif "auth" in body:
+        body.pop("auth", None)
     with open(SETTINGS_FILE, "w") as f:
         yaml.dump(body, f, allow_unicode=True, sort_keys=False)
     return {"ok": True}
@@ -96,9 +113,16 @@ async def list_profiles():
     return [{"name": f.stem} for f in sorted(PROFILES_DIR.glob("*.yaml"))]
 
 
+def _profile_path(name: str):
+    try:
+        return safe_profile_path(PROFILES_DIR, name)
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/profiles/{name}")
 async def get_profile(name: str):
-    path = PROFILES_DIR / f"{name}.yaml"
+    path = _profile_path(name)
     if not path.exists():
         raise HTTPException(404, "Profile not found")
     with open(path) as f:
@@ -107,8 +131,10 @@ async def get_profile(name: str):
 
 @app.put("/api/profiles/{name}")
 async def save_profile(name: str, request: Request):
+    path = _profile_path(name)
     body = await request.json()
-    path = PROFILES_DIR / f"{name}.yaml"
+    if not isinstance(body, dict):
+        raise HTTPException(400, "profile must be an object")
     with open(path, "w") as f:
         yaml.dump(body, f, allow_unicode=True, sort_keys=False)
     return {"ok": True}
@@ -116,7 +142,7 @@ async def save_profile(name: str, request: Request):
 
 @app.delete("/api/profiles/{name}")
 async def delete_profile(name: str):
-    path = PROFILES_DIR / f"{name}.yaml"
+    path = _profile_path(name)
     if path.exists():
         path.unlink()
     return {"ok": True}
@@ -126,23 +152,38 @@ async def delete_profile(name: str):
 
 @app.post("/api/profiles/{name}/build")
 async def build_profile(name: str):
-    path = PROFILES_DIR / f"{name}.yaml"
+    path = _profile_path(name)
     if not path.exists():
         raise HTTPException(404, "Profile not found")
     with open(path) as f:
-        profile = yaml.safe_load(f)
+        profile = yaml.safe_load(f) or {}
+    if not isinstance(profile, dict):
+        raise HTTPException(400, "profile yaml must be an object")
+    # Settings and targets come from the server-side config — clients may NOT
+    # override them (otherwise PUT /api/builds/start becomes RCE via _settings).
     profile["_targets"]  = TARGETS
     profile["_settings"] = load_settings()
-    build_id = start_build(profile)
+    try:
+        build_id = start_build(profile)
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     return {"build_id": build_id}
 
 
 @app.post("/api/builds/start")
 async def build_inline(request: Request):
     profile = await request.json()
+    if not isinstance(profile, dict):
+        raise HTTPException(400, "profile must be an object")
+    # Drop any client-supplied _settings / _targets — server-side only.
+    profile.pop("_settings", None)
+    profile.pop("_targets", None)
     profile["_targets"]  = TARGETS
     profile["_settings"] = load_settings()
-    build_id = start_build(profile)
+    try:
+        build_id = start_build(profile)
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     return {"build_id": build_id}
 
 
@@ -153,6 +194,10 @@ async def list_builds():
 
 @app.get("/api/builds/{build_id}")
 async def get_build(build_id: str):
+    try:
+        safe_name(build_id, field="build_id")
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     b = builds.get(build_id)
     if not b:
         raise HTTPException(404, "Build not found")
@@ -161,6 +206,10 @@ async def get_build(build_id: str):
 
 @app.get("/api/builds/{build_id}/events")
 async def build_events(build_id: str):
+    try:
+        safe_name(build_id, field="build_id")
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     async def generate():
         async for chunk in stream_events(build_id):
             yield chunk
@@ -184,16 +233,25 @@ async def get_artifacts():
 @app.post("/api/flash/start")
 async def flash_start(request: Request):
     body   = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "request body must be an object")
     device = body.get("device")
     image  = body.get("image")
     if not device or not image:
         raise HTTPException(400, "device and image required")
-    flash_id = start_flash(device, image, load_settings())
+    try:
+        flash_id = start_flash(device, image, load_settings())
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     return {"flash_id": flash_id}
 
 
 @app.get("/api/flash/{flash_id}/events")
 async def flash_events(flash_id: str):
+    try:
+        safe_name(flash_id, field="flash_id")
+    except UnsafeInputError as e:
+        raise HTTPException(400, str(e))
     async def generate():
         async for chunk in stream_flash_events(flash_id):
             yield chunk
