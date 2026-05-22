@@ -12,9 +12,11 @@
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
+use std::net::IpAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -77,15 +79,34 @@ fn run_output(args: &[&str]) -> String {
 
 /* ---- DNS management ---------------------------------------------------- */
 
+/// Filter a server list to only valid IP addresses — prevents resolv.conf
+/// injection where an attacker could embed newlines / shell metacharacters
+/// in a "DNS=" line of a WireGuard config.
+fn filter_valid_dns(servers: &[String]) -> Vec<String> {
+    servers.iter()
+        .filter(|s| IpAddr::from_str(s.trim()).is_ok())
+        .map(|s| s.trim().to_string())
+        .collect()
+}
+
 fn write_resolv(servers: &[String]) {
     fs::create_dir_all("/run/netd").ok();
-    let content = servers.iter()
+    let valid = filter_valid_dns(servers);
+    let content = valid.iter()
         .map(|s| format!("nameserver {}\n", s))
         .collect::<String>();
-    fs::write(RESOLV_CONF, content).ok();
-    /* Ensure /etc/resolv.conf → /run/netd/resolv.conf */
-    let _ = fs::remove_file("/etc/resolv.conf");
-    std::os::unix::fs::symlink(RESOLV_CONF, "/etc/resolv.conf").ok();
+    /* Atomic rename so partial reads never see truncated file */
+    let tmp = format!("{}.tmp", RESOLV_CONF);
+    if fs::write(&tmp, content).is_ok() {
+        let _ = fs::rename(&tmp, RESOLV_CONF);
+    }
+    /* Ensure /etc/resolv.conf → /run/netd/resolv.conf (idempotent) */
+    if fs::read_link("/etc/resolv.conf").ok().as_deref()
+        != Some(std::path::Path::new(RESOLV_CONF))
+    {
+        let _ = fs::remove_file("/etc/resolv.conf");
+        std::os::unix::fs::symlink(RESOLV_CONF, "/etc/resolv.conf").ok();
+    }
 }
 
 /* ---- Wi-Fi ------------------------------------------------------------- */
@@ -148,15 +169,66 @@ fn wifi_start(state: &SharedState) {
     eprintln!("[netd] Wi-Fi association timeout");
 }
 
+/// Encode an SSID as hex (e.g. "hello" → "68656c6c6f"). wpa_supplicant accepts
+/// unquoted hex-form SSIDs natively, which sidesteps ALL quoting/escaping
+/// vulnerabilities. Returns None if SSID is invalid (empty, >32 bytes, or
+/// contains NUL).
+fn encode_ssid_hex(ssid: &str) -> Option<String> {
+    let bytes = ssid.as_bytes();
+    if bytes.is_empty() || bytes.len() > 32 || bytes.contains(&0) {
+        return None;
+    }
+    Some(bytes.iter().map(|b| format!("{:02x}", b)).collect())
+}
+
+/// Validate a WPA2-PSK passphrase: 8–63 printable ASCII characters,
+/// excluding `"` and `\` (which would break the quoted form in wpa_supplicant.conf).
+fn validate_psk(psk: &str) -> Option<&str> {
+    let bytes = psk.as_bytes();
+    if bytes.len() < 8 || bytes.len() > 63 {
+        return None;
+    }
+    if !bytes.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+        return None;
+    }
+    if psk.contains('"') || psk.contains('\\') {
+        return None;
+    }
+    Some(psk)
+}
+
 fn wifi_connect_new(ssid: &str, psk: &str, state: &SharedState) -> bool {
-    /* Write new wpa_supplicant.conf */
+    /* Validate AND sanitise — never interpolate raw input into config files */
+    let ssid_hex = match encode_ssid_hex(ssid) {
+        Some(s) => s,
+        None => {
+            eprintln!("[netd] WIFI_CONNECT rejected: invalid SSID");
+            return false;
+        }
+    };
+    let psk_safe = match validate_psk(psk) {
+        Some(s) => s,
+        None => {
+            eprintln!("[netd] WIFI_CONNECT rejected: invalid PSK");
+            return false;
+        }
+    };
+
     fs::create_dir_all("/data/netd").ok();
+    /* Set restrictive permissions BEFORE writing — PSK is sensitive */
     let conf = format!(
         "ctrl_interface={}\nctrl_interface_group=0\nupdate_config=1\n\n\
-         network={{\n    ssid=\"{}\"\n    psk=\"{}\"\n    key_mgmt=WPA-PSK\n}}\n",
-        WPA_SOCK, ssid, psk
+         network={{\n    ssid={}\n    psk=\"{}\"\n    key_mgmt=WPA-PSK\n}}\n",
+        WPA_SOCK, ssid_hex, psk_safe
     );
-    if fs::write(WPA_CONF, &conf).is_err() {
+    /* Write atomically with 0600 perms */
+    let tmp = format!("{}.tmp", WPA_CONF);
+    if fs::write(&tmp, &conf).is_err() {
+        return false;
+    }
+    let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+    if fs::rename(&tmp, WPA_CONF).is_err() {
+        let _ = fs::remove_file(&tmp);
         return false;
     }
     wifi_start(state);
@@ -280,16 +352,18 @@ fn handle_client(stream: UnixStream, state: SharedState) {
                 json!({ "ok": ok })
             }
             "SET_DNS" => {
-                let servers: Vec<String> = body.get("servers")
+                let raw: Vec<String> = body.get("servers")
                     .and_then(|v| v.as_array())
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                     .unwrap_or_default();
+                /* Drop anything that isn't a valid IP — see filter_valid_dns */
+                let servers = filter_valid_dns(&raw);
                 if !servers.is_empty() {
                     state.lock().unwrap().dns_servers = servers.clone();
                     write_resolv(&servers);
                     json!({ "ok": true })
                 } else {
-                    json!({ "ok": false, "error": "empty servers list" })
+                    json!({ "ok": false, "error": "no valid IP addresses in servers list" })
                 }
             }
             _ => json!({ "error": format!("unknown action: {}", action) }),
@@ -332,14 +406,145 @@ fn main() {
         });
     }
 
-    /* Unix socket */
-    let _ = fs::remove_file(NETD_SOCK);
-    let listener = UnixListener::bind(NETD_SOCK).expect("bind /run/netd.sock");
-    fs::set_permissions(NETD_SOCK, fs::Permissions::from_mode(0o660)).ok();
+    /* Unix socket — set umask BEFORE bind so the socket isn't world-accessible
+       for the TOCTOU window between bind() and chmod() */
+    let listener = bind_socket(NETD_SOCK).expect("bind /run/netd.sock");
     eprintln!("[netd] listening on {}", NETD_SOCK);
 
     for stream in listener.incoming().flatten() {
+        /* Per-client read/write timeouts — a stuck client can't pin a worker
+           thread + FD forever (DoS) */
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
         let st = state.clone();
         thread::spawn(move || handle_client(stream, st));
     }
+}
+
+extern "C" {
+    fn umask(mask: u32) -> u32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssid_hex_normal() {
+        assert_eq!(encode_ssid_hex("hello"), Some("68656c6c6f".to_string()));
+        assert_eq!(encode_ssid_hex("a"), Some("61".to_string()));
+    }
+
+    #[test]
+    fn ssid_hex_unicode() {
+        // SSID can be any bytes ≤32; hex encoding handles all of them safely
+        assert_eq!(encode_ssid_hex("café").map(|h| h.len()), Some(10));
+    }
+
+    #[test]
+    fn ssid_hex_rejects_empty() {
+        assert_eq!(encode_ssid_hex(""), None);
+    }
+
+    #[test]
+    fn ssid_hex_rejects_too_long() {
+        let long = "x".repeat(33);
+        assert_eq!(encode_ssid_hex(&long), None);
+    }
+
+    #[test]
+    fn ssid_hex_rejects_nul() {
+        assert_eq!(encode_ssid_hex("hi\x00there"), None);
+    }
+
+    #[test]
+    fn ssid_hex_handles_injection_attempt() {
+        // The classic injection payload: "x\"\nnetwork={..."
+        // Hex encoding makes it a literal SSID, not a parser break
+        let evil = "x\"\nnetwork={ssid=\"evil\"";
+        let hex = encode_ssid_hex(evil).unwrap();
+        assert!(!hex.contains('"'));
+        assert!(!hex.contains('\n'));
+        assert!(!hex.contains('{'));
+    }
+
+    #[test]
+    fn psk_accepts_valid() {
+        assert!(validate_psk("password").is_some());
+        assert!(validate_psk("p@ssw0rd!").is_some());
+        assert!(validate_psk(&"x".repeat(63)).is_some());
+    }
+
+    #[test]
+    fn psk_rejects_too_short() {
+        assert!(validate_psk("short").is_none()); // 5 chars
+        assert!(validate_psk("1234567").is_none()); // 7 chars
+    }
+
+    #[test]
+    fn psk_rejects_too_long() {
+        assert!(validate_psk(&"x".repeat(64)).is_none());
+    }
+
+    #[test]
+    fn psk_rejects_quote_and_backslash() {
+        assert!(validate_psk("ab\"cd1234").is_none());
+        assert!(validate_psk("ab\\cd1234").is_none());
+    }
+
+    #[test]
+    fn psk_rejects_newline() {
+        assert!(validate_psk("abcd\n1234").is_none());
+    }
+
+    #[test]
+    fn psk_rejects_nul() {
+        assert!(validate_psk("abcd\x001234").is_none());
+    }
+
+    #[test]
+    fn psk_rejects_injection_payload() {
+        // The original review payload
+        let evil = "x\"\nnetwork={ssid=\"evil\"";
+        assert!(validate_psk(evil).is_none());
+    }
+
+    #[test]
+    fn dns_filter_accepts_ipv4_and_ipv6() {
+        let input = vec!["1.1.1.1".to_string(),
+                         "2606:4700:4700::1111".to_string(),
+                         "8.8.8.8".to_string()];
+        assert_eq!(filter_valid_dns(&input).len(), 3);
+    }
+
+    #[test]
+    fn dns_filter_rejects_garbage() {
+        let input = vec!["1.1.1.1\nnameserver evil.com".to_string(),
+                         "not-an-ip".to_string(),
+                         "; rm -rf /".to_string(),
+                         "8.8.8.8".to_string()];
+        let out = filter_valid_dns(&input);
+        assert_eq!(out, vec!["8.8.8.8".to_string()]);
+    }
+
+    #[test]
+    fn dns_filter_trims_whitespace() {
+        let input = vec!["  1.1.1.1  ".to_string()];
+        assert_eq!(filter_valid_dns(&input), vec!["1.1.1.1".to_string()]);
+    }
+}
+
+/// Bind a Unix domain socket safely: set umask so the socket is created with
+/// mode 0660 (not the process default), eliminating the TOCTOU window where
+/// `bind` produces a world-accessible socket before `chmod` runs.
+fn bind_socket(path: &str) -> io::Result<UnixListener> {
+    let _ = fs::remove_file(path);
+    /* umask 0o117 → resulting mode 0o660 (rw-rw----) */
+    let old = unsafe { umask(0o117) };
+    let res = UnixListener::bind(path);
+    unsafe { umask(old) };
+    let listener = res?;
+    /* Also explicit chmod in case umask was ignored on some filesystem */
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o660));
+    Ok(listener)
 }

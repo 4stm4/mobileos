@@ -10,3 +10,7 @@ output/
 __pycache__/
 *.pyc
 *.pyo
+
+# Rust
+target/
+Cargo.lock.bak
