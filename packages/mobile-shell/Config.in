@@ -2,6 +2,13 @@ config BR2_PACKAGE_MOBILE_SHELL
 	bool "mobile-shell"
 	depends on BR2_PACKAGE_LVGL
 	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_HAS_UDEV # libinput/libudev
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_LIBINPUT
 	help
 	  LVGL 9.x-based mobile shell: launcher, dialer,
 	  messages UI, settings. Communicates via commd ui.sock.
+
+comment "mobile-shell needs LVGL, udev /dev management and a toolchain w/ threads"
+	depends on !BR2_PACKAGE_LVGL || !BR2_PACKAGE_HAS_UDEV || \
+		!BR2_TOOLCHAIN_HAS_THREADS
